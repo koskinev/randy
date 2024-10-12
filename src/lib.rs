@@ -295,7 +295,7 @@ impl FromRng<WyRng> for u16 {
                 l = m as u16;
             }
         }
-        (m >> 8) as u16 + low
+        (m >> 16) as u16 + low
     }
 }
 
@@ -324,7 +324,7 @@ impl FromRng<WyRng> for u32 {
                 l = m as u32;
             }
         }
-        (m >> 8) as u32 + low
+        (m >> 32) as u32 + low
     }
 }
 
@@ -353,7 +353,7 @@ impl FromRng<WyRng> for u64 {
                 l = m as u64;
             }
         }
-        (m >> 8) as u64 + low
+        (m >> 64) as u64 + low
     }
 }
 
