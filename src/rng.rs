@@ -1,38 +1,5 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
-/// The increment used to update the state of the RNG. This value was selected so that it is coprime
-/// to 2^64, and `INCREMENT / 2^64` is approximately `phi - 1`, where `phi` is the golden ratio.
-/// This produces a low discrepancy sequence with a period of 2^64.
-///
-/// The following Python code was used to find the constant:
-/// ```python
-/// from math import ceil, floor, gcd, sqrt
-///
-/// # The golden ratio
-/// phi = (1 + sqrt(5)) / 2
-///
-/// # The sequence length
-/// n = 1 << 64
-///
-/// # Find the coprime of `n` that is closest to `n * (phi - 1)`
-/// a, b = floor(n * (phi - 1)), ceil(n * (phi - 1))
-/// while True:
-///     if gcd(a, n) == 1:
-///         c = a
-///         break
-///     if gcd(b, n) == 1:
-///         c = b
-///         break
-///     a, b = a - 1, b + 1
-///
-/// assert gcd(c, n) == 1
-///
-/// print(f"Coprime of n = {n} closest to n * {phi - 1} ≈  is {c}")
-/// print(f"The ratio is {c / n}")
-/// ```
-const INCREMENT: u64 = 0x9E3779B97F4A7FFF;
-
-
 #[derive(Debug)]
 /// A random number generator with atomically updated state.
 ///
@@ -44,6 +11,38 @@ pub struct Rng {
 }
 
 impl Rng {
+    /// The increment used to update the state of the RNG. This value was selected so that it is
+    /// coprime to 2^64, and `INCREMENT / 2^64` is approximately `phi - 1`, where `phi` is the
+    /// golden ratio. This produces a low discrepancy sequence with a period of 2^64.
+    ///
+    /// The following Python code was used to find the constant:
+    /// ```python
+    /// from math import ceil, floor, gcd, sqrt
+    ///
+    /// # The golden ratio
+    /// phi = (1 + sqrt(5)) / 2
+    ///
+    /// # The sequence length
+    /// n = 1 << 64
+    ///
+    /// # Find the coprime of `n` that is closest to `n * (phi - 1)`
+    /// a, b = floor(n * (phi - 1)), ceil(n * (phi - 1))
+    /// while True:
+    ///     if gcd(a, n) == 1:
+    ///         c = a
+    ///         break
+    ///     if gcd(b, n) == 1:
+    ///         c = b
+    ///         break
+    ///     a, b = a - 1, b + 1
+    ///
+    /// assert gcd(c, n) == 1
+    ///
+    /// print(f"Coprime of n = {n} closest to n * {phi - 1} ≈  is {c}")
+    /// print(f"The ratio is {c / n}")
+    /// ```
+    pub(crate) const INCREMENT: u64 = 0x9E3779B97F4A7FFF;
+
     /// Returns a random value of type `T` in the range `[low, high)`.
     ///
     /// # Example
@@ -91,11 +90,8 @@ impl Rng {
         }
     }
 
-    /// Initializes the RNG with a random seed. In debug builds, the seed is set to a constant to
-    /// make tests reproducible.
-    ///
-    /// Note that because there is always effectively just one instance of the RNG, this method
-    /// reseeds the RNG globally.
+    /// Initializes a new RNG. In release builds, the state is seeded with `std::hash::RandomState`.
+    /// In debug builds, the state is set to a constant to make tests reproducible.
     ///
     /// # Example
     /// ```
@@ -139,10 +135,10 @@ impl Rng {
     /// rng.reseed(1234);
     /// let x: u32 = rng.random();
     ///
-    /// assert_eq!(x, 3304022255);
+    /// assert_eq!(x, 0xCF47AAE8);
     /// ```
     pub fn reseed(&self, seed: u64) {
-        let new_state = seed.wrapping_add(INCREMENT);
+        let new_state = seed.wrapping_add(Self::INCREMENT);
         self.state.store(new_state, Ordering::Relaxed);
     }
 
@@ -168,14 +164,12 @@ impl Rng {
         }
     }
 
-    /// Returns the next `u64` value in the pseudorandom sequence.
+    /// Returns the next `u64` value from the pseudorandom sequence.
     fn u64(&self) -> u64 {
-        // Read the current state and increment it. The constant `INCREMENT` was selected so that it
-        // is coprime to 2^64, and `INCREMENT / 2^64` is approximately `phi - 1`, where `phi` is the
-        // golden ratio. This produces a low discrepancy sequence with a period of 2^64.
-        let old_state = self.state.fetch_add(INCREMENT, Ordering::Relaxed);
+        // Read the current state and increment it
+        let old_state = self.state.fetch_add(Self::INCREMENT, Ordering::Relaxed);
 
-        // Hash the old state to produce the next value.
+        // Hash the old state to produce the next value
         wyhash(old_state)
     }
 }
@@ -191,7 +185,7 @@ fn get_seed() -> u64 {
 }
 
 #[inline]
-fn wyhash(value: u64) -> u64 {
+pub(crate) fn wyhash(value: u64) -> u64 {
     // These constants, like the `INCREMENT` constant, are coprime to 2^64.
     const ALPHA: u128 = 0x11F9ADBB8F8DA6FFF;
     const BETA: u128 = 0x1E3DF208C6781EFFF;
