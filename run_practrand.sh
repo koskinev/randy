@@ -11,4 +11,4 @@ if [ ! -f "RNG_test" ]; then
 fi
 
 cargo build --release --bin tester
-target/release/tester | ./RNG_test stdin32 -multithreaded
+target/release/tester | ./RNG_test stdin64 -multithreaded

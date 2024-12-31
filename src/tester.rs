@@ -1,13 +1,13 @@
-use pcg::PCGRng;
 use std::io::{self, Write};
+use rng::Rng;
 
 #[allow(dead_code)]
-mod pcg;
+mod rng;
 
-const BUFFER_SIZE: usize = 1024_usize.pow(2);
+const BUFFER_SIZE: usize = 256_usize.pow(2);
 
 fn main() {
-    let rng = PCGRng::init();
+    let rng = Rng::new();
     let mut buffer = [0; BUFFER_SIZE];
     let mut output = io::stdout();
     loop {
