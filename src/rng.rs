@@ -1,29 +1,61 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
-static STATE: AtomicU64 = AtomicU64::new(0x4D595DF4D0F33173);
-const MULTIPLIER: u64 = 6364136223846793005;
-const INCREMENT: u64 = 1442695040888963407;
+/// The increment used to update the state of the RNG. This value was selected so that it is coprime
+/// to 2^64, and `INCREMENT / 2^64` is approximately `phi - 1`, where `phi` is the golden ratio.
+/// This produces a low discrepancy sequence with a period of 2^64.
+///
+/// The following Python code was used to find the constant:
+/// ```python
+/// from math import ceil, floor, gcd, sqrt
+///
+/// # The golden ratio
+/// phi = (1 + sqrt(5)) / 2
+///
+/// # The sequence length
+/// n = 1 << 64
+///
+/// # Find the coprime of `n` that is closest to `n * (phi - 1)`
+/// a, b = floor(n * (phi - 1)), ceil(n * (phi - 1))
+/// while True:
+///     if gcd(a, n) == 1:
+///         c = a
+///         break
+///     if gcd(b, n) == 1:
+///         c = b
+///         break
+///     a, b = a - 1, b + 1
+///
+/// assert gcd(c, n) == 1
+///
+/// print(f"Coprime of n = {n} closest to n * {phi - 1} ≈  is {c}")
+/// print(f"The ratio is {c / n}")
+/// ```
+const INCREMENT: u64 = 0x9E3779B97F4A7FFF;
 
-#[derive(Clone, Copy, Debug)]
-/// A PCG random number generator. This version uses the PCG-XSH-RR algorithm with 32-bit output.
-pub struct PCGRng {
-    /// A private field to prevent direct instantiation.
-    _lawn: (),
+
+#[derive(Debug)]
+/// A random number generator with atomically updated state.
+///
+/// The implementation is based on hashing the Weyl sequence with `wyhash`, adapted from
+/// https://github.com/lemire/testingRNG/blob/master/source/wyhash.h.
+pub struct Rng {
+    /// The current state of the RNG.
+    state: AtomicU64,
 }
 
-impl PCGRng {
+impl Rng {
     /// Returns a random value of type `T` in the range `[low, high)`.
     ///
     /// # Example
     /// ```
-    /// # use randy::PCGRng;
-    /// let rng = PCGRng::init();
+    /// # use randy::Rng;
+    /// let rng = Rng::new();
     /// let value: u32 = rng.bounded(10, 20);
     /// assert!(value >= 10 && value < 20);
     /// ```
     pub fn bounded<T>(&self, low: T, high: T) -> T
     where
-        T: FromGenerator<PCGRng>,
+        T: FromGenerator<Rng>,
     {
         T::from_generator_bounded(self, low, high)
     }
@@ -33,8 +65,8 @@ impl PCGRng {
     ///
     /// # Example
     /// ```
-    /// # use randy::PCGRng;
-    /// let rng = PCGRng::init();
+    /// # use randy::Rng;
+    /// let rng = Rng::new();
     /// let data = [1, 2, 3, 4, 5];
     /// let value = rng.choose(&data);
     /// println!("{value:?}");
@@ -51,30 +83,30 @@ impl PCGRng {
     /// Fills the slice `data` with random bytes, replacing the existing contents. The length of the
     /// slice must be a multiple of 8.
     pub fn fill_bytes(&self, data: &mut [u8]) {
-        const CHUNK_SIZE: usize = 4;
+        const CHUNK_SIZE: usize = std::mem::size_of::<u64>();
         assert!(data.len() % CHUNK_SIZE == 0);
         for chunk in data.chunks_mut(CHUNK_SIZE) {
-            let value = pcg32();
+            let value = self.u64();
             chunk.copy_from_slice(&value.to_ne_bytes());
         }
     }
 
-    /// Initializes the RNG with a random seed. In debug builds, the seed is constant to make
-    /// tests reproducible.
+    /// Initializes the RNG with a random seed. In debug builds, the seed is set to a constant to
+    /// make tests reproducible.
     ///
     /// Note that because there is always effectively just one instance of the RNG, this method
     /// reseeds the RNG globally.
     ///
     /// # Example
     /// ```
-    /// # use randy::PCGRng;
-    /// let rng = PCGRng::init();
+    /// # use randy::Rng;
+    /// let rng = Rng::new();
     /// let x: u32 = rng.random();
     /// println!("{x}");
     /// ```
-    pub fn init() -> Self {
-        pcg32_set_seed(get_seed());
-        Self { _lawn: () }
+    pub fn new() -> Self {
+        let state = AtomicU64::new(get_seed());
+        Self { state }
     }
 
     /// Returns a random value of type `T`. For integers, the value is in the range `[T::MIN,
@@ -82,14 +114,14 @@ impl PCGRng {
     ///
     /// # Example
     /// ```
-    /// # use randy::PCGRng;
-    /// let rng = PCGRng::init();
+    /// # use randy::Rng;
+    /// let rng = Rng::new();
     /// let value: f32 = rng.random();
     /// println!("{value:?}");
     /// ```
     pub fn random<T>(&self) -> T
     where
-        T: FromGenerator<PCGRng>,
+        T: FromGenerator<Rng>,
     {
         T::from_generator(self)
     }
@@ -101,29 +133,32 @@ impl PCGRng {
     ///
     /// # Example
     /// ```
-    /// # use randy::PCGRng;
-    /// let rng = PCGRng::reseed(1234);
+    /// # use randy::Rng;
+    /// let rng = Rng::new();
+    ///
+    /// rng.reseed(1234);
     /// let x: u32 = rng.random();
-    /// assert_eq!(x, 0x9E2942A8);
+    ///
+    /// assert_eq!(x, 3304022255);
     /// ```
-    pub fn reseed(seed: u64) -> Self {
-        pcg32_set_seed(seed);
-        Self { _lawn: () }
+    pub fn reseed(&self, seed: u64) {
+        let new_state = seed.wrapping_add(INCREMENT);
+        self.state.store(new_state, Ordering::Relaxed);
     }
 
     /// Shuffles the elements of the slice `data` using the Fisher-Yates algorithm.
     ///
     /// # Example
     /// ```
-    /// # use randy::PCGRng;
-    /// let rng = PCGRng::init();
+    /// # use randy::Rng;
+    /// let rng = Rng::new();
     /// let mut data = [1, 2, 3, 4, 5];
     /// rng.shuffle(&mut data);
     /// println!("{data:?}");
     /// ```
     pub fn shuffle<T>(&self, data: &mut [T])
     where
-        usize: FromGenerator<PCGRng>,
+        usize: FromGenerator<Rng>,
     {
         let mut end = data.len();
         while end > 1 {
@@ -131,6 +166,17 @@ impl PCGRng {
             data.swap(end - 1, other);
             end -= 1;
         }
+    }
+
+    /// Returns the next `u64` value in the pseudorandom sequence.
+    fn u64(&self) -> u64 {
+        // Read the current state and increment it. The constant `INCREMENT` was selected so that it
+        // is coprime to 2^64, and `INCREMENT / 2^64` is approximately `phi - 1`, where `phi` is the
+        // golden ratio. This produces a low discrepancy sequence with a period of 2^64.
+        let old_state = self.state.fetch_add(INCREMENT, Ordering::Relaxed);
+
+        // Hash the old state to produce the next value.
+        wyhash(old_state)
     }
 }
 
@@ -145,34 +191,15 @@ fn get_seed() -> u64 {
 }
 
 #[inline]
-fn pcg32() -> u32 {
-    let mut x = STATE.load(Ordering::Acquire);
-    let count = (x >> 59) as u32;
-    let state = x.wrapping_mul(MULTIPLIER).wrapping_add(INCREMENT);
-    STATE.store(state, Ordering::Release);
-    x ^= x >> 18;
-    rotr32((x >> 27) as u32, count)
-}
+fn wyhash(value: u64) -> u64 {
+    // These constants, like the `INCREMENT` constant, are coprime to 2^64.
+    const ALPHA: u128 = 0x11F9ADBB8F8DA6FFF;
+    const BETA: u128 = 0x1E3DF208C6781EFFF;
 
-fn pcg32_init(seed: u64) {
-    STATE.store(seed.wrapping_add(INCREMENT), Ordering::Relaxed);
-    pcg32();
-}
-
-/// Initializes the RNG with the given `seed`. If the seed is zero, the RNG is seeded with a random
-/// value.
-pub fn pcg32_set_seed(seed: u64) {
-    if seed == 0 {
-        pcg32_init(get_seed());
-    } else {
-        pcg32_init(seed);
-    }
-}
-
-#[inline]
-fn rotr32(x: u32, r: u32) -> u32 {
-    let m = (-(r as i32)) as u32;
-    x >> r | x << (m & 31)
+    let mut tmp = (value as u128).wrapping_mul(ALPHA);
+    tmp ^= tmp >> 64;
+    tmp = tmp.wrapping_mul(BETA);
+    ((tmp >> 64) ^ tmp) as _
 }
 
 /// A generator of values of type `T`.
@@ -190,17 +217,16 @@ pub trait FromGenerator<G> {
     fn from_generator_bounded(src: &G, low: Self, high: Self) -> Self;
 }
 
-impl Generator<u32> for PCGRng {
-    fn generate(&self) -> u32 {
-        pcg32()
+impl Default for Rng {
+    /// Returns a new instance of `Rng`.
+    fn default() -> Self {
+        Self::new()
     }
 }
 
-impl Generator<u64> for PCGRng {
+impl Generator<u64> for Rng {
     fn generate(&self) -> u64 {
-        let low = pcg32() as u64;
-        let high = pcg32() as u64;
-        low | high << 32
+        self.u64()
     }
 }
 
@@ -279,7 +305,7 @@ where
 
 impl<G> FromGenerator<G> for u8
 where
-    G: Generator<u32>,
+    G: Generator<u64>,
 {
     fn from_generator(src: &G) -> Self {
         src.generate() as _
@@ -311,7 +337,7 @@ where
 
 impl<G> FromGenerator<G> for i8
 where
-    G: Generator<u32>,
+    G: Generator<u64>,
 {
     fn from_generator(src: &G) -> Self {
         src.generate() as _
@@ -331,7 +357,7 @@ where
 
 impl<G> FromGenerator<G> for u16
 where
-    G: Generator<u32>,
+    G: Generator<u64>,
 {
     fn from_generator(src: &G) -> Self {
         src.generate() as _
@@ -363,7 +389,7 @@ where
 
 impl<G> FromGenerator<G> for i16
 where
-    G: Generator<u32>,
+    G: Generator<u64>,
 {
     fn from_generator(src: &G) -> Self {
         src.generate() as _
@@ -383,7 +409,7 @@ where
 
 impl<G> FromGenerator<G> for u32
 where
-    G: Generator<u32>,
+    G: Generator<u64>,
 {
     fn from_generator(src: &G) -> Self {
         src.generate() as _
@@ -415,7 +441,7 @@ where
 
 impl<G> FromGenerator<G> for i32
 where
-    G: Generator<u32>,
+    G: Generator<u64>,
 {
     fn from_generator(src: &G) -> Self {
         src.generate() as _
@@ -529,16 +555,13 @@ where
 
 impl<G> FromGenerator<G> for usize
 where
-    G: Generator<u32> + Generator<u64>,
+    G: Generator<u64>,
 {
     fn from_generator(src: &G) -> Self {
         match core::mem::size_of::<usize>() {
-            4 => Generator::<u32>::generate(src) as _,
-            8 => Generator::<u64>::generate(src) as _,
-            16 => {
-                ((Generator::<u64>::generate(src) as u128) << 64
-                    | Generator::<u64>::generate(src) as u128) as _
-            }
+            4 => src.generate() as _,
+            8 => src.generate() as _,
+            16 => ((src.generate() as u128) << 64 | src.generate() as u128) as _,
             _ => panic!("Unsupported usize size"),
         }
     }
@@ -556,16 +579,13 @@ where
 
 impl<G> FromGenerator<G> for isize
 where
-    G: Generator<u32> + Generator<u64>,
+    G: Generator<u64>,
 {
     fn from_generator(src: &G) -> Self {
         match core::mem::size_of::<isize>() {
-            4 => Generator::<u32>::generate(src) as _,
-            8 => Generator::<u64>::generate(src) as _,
-            16 => {
-                ((Generator::<u64>::generate(src) as u128) << 64
-                    | Generator::<u64>::generate(src) as u128) as _
-            }
+            4 => src.generate() as _,
+            8 => src.generate() as _,
+            16 => ((src.generate() as u128) << 64 | src.generate() as u128) as _,
             _ => panic!("Unsupported isize size"),
         }
     }
