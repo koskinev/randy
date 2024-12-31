@@ -101,7 +101,16 @@ impl Rng {
     /// println!("{x}");
     /// ```
     pub fn new() -> Self {
-        let state = AtomicU64::new(get_seed());
+        let seed = {
+            #[cfg(not(debug_assertions))]
+            {
+                use std::hash::{BuildHasher, RandomState};
+                RandomState::new().hash_one("foo")
+            }
+            #[cfg(debug_assertions)]
+            1234
+        };
+        let state = AtomicU64::new(seed);
         Self { state }
     }
 
@@ -172,16 +181,6 @@ impl Rng {
         // Hash the old state to produce the next value
         wyhash(old_state)
     }
-}
-
-fn get_seed() -> u64 {
-    #[cfg(not(debug_assertions))]
-    {
-        use std::hash::{BuildHasher, RandomState};
-        RandomState::new().hash_one("foo")
-    }
-    #[cfg(debug_assertions)]
-    1234
 }
 
 #[inline]
