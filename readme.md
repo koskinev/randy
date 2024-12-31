@@ -2,7 +2,7 @@
 
 Since RNGs require mutable state, and Rust enforces exclusive access to mutate data, generating random data in Rust typically requires a mutable reference to an RNG. This can be inconvenient in tests because you might need to initialize several RNGs and pass them around as arguments.
 
-This project provides a simple PRNG that uses atomics to update its state. This makes it possible to use the generator with immutable references, like this:
+This project provides a simple PRNG that uses atomics to update its state. Only an immutable reference is needed to to use the generator:
 
 ```rust
 use randy::Rng;
@@ -42,8 +42,8 @@ fn u64(&self) -> u64 {
 
 ## Quality
 
-The RNG is not cryptographically secure, but based on my tests it passes [PractRand](http://pracrand.sourceforge.net/) pre0.95 at least up to 256 GB of generated data. To run the tests, you need to compile the `RNG_test` binary from PractRand source, place it at the root of this project, and execute `run_practrand.sh`. See this [post](https://www.pcg-random.org/posts/how-to-test-with-practrand.html) by Melissa O'Neill for instructions on how to compile PractRand.  
+The RNG is not cryptographically secure, but it passes [PractRand](http://pracrand.sourceforge.net/) pre0.95 at least up to 256 GB of generated data. To run the tests, you need to compile the `RNG_test` binary from PractRand source, place it at the root of this project, and execute `run_practrand.sh`. See this [post](https://www.pcg-random.org/posts/how-to-test-with-practrand.html) by Melissa O'Neill for instructions on how to compile PractRand.  
 
 ## Performance
 
-There is a speed penalty for using atomics. On my Ryzen 5800H, the throughput of the atomic RNG is about 3.7 GB/s, compared to 7.7 GB/s for a variant that uses a mutable reference. Run `cargo test bench --release -- --ignored --nocapture` to see what the performance is on your machine.
+There is a speed penalty for using atomics. On my machine, the throughput of the atomic RNG is about 3.7 GB/s, compared to 7.7 GB/s for a variant that uses a mutable reference. Run `cargo test bench --release -- --ignored --nocapture` to see what the performance is on your machine.
