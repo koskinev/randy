@@ -5,25 +5,32 @@ Since RNGs require mutable state, and Rust enforces exclusive access to mutate d
 This project provides a simple PRNG that uses atomics to update its state. Only an immutable reference is needed to to use the generator:
 
 ```rust
-use randy::Rng;
+use randy::{Rng, RNG};
 
 // Create a new RNG
-let rng = Randy::new();
+let rng = Rng::new();
 
 // A function that takes a reference to the RNG
-// 
-//        not &mut 👇!
-fn find_answer(thoughts: &Rng) -> Option<u64> {
+//
+//   look mom, not &mut 👇!
+fn find_answer(thoughts: &Rng) {
     match thoughts.random() {
-        42 => Some(42),
-        _ => None,
+        42 => println!("Got 42! The answer!"),
+        x => println!("Got {x}, not the answer"),
     }
 }
 
-assert!(find_answer(&rng).is_none());
+// A function that uses the global RNG across threads
+fn think() {
+    thread::scope(|s| {
+        (0..4).for_each(|_| {
+            s.spawn(|| find_answer(&RNG));
+        });
+    });
+}
 ```
 
-`Randy::Rng` provides methods to generate random numbers of different types, both with and without bounds, as well as for shuffling and sampling from slices.
+The library provides methods to generate random numbers of different types, both with and without bounds, as well as for shuffling and sampling from slices.
 
 ## Implementation
 

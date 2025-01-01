@@ -1,4 +1,10 @@
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    LazyLock,
+};
+
+/// A global instance of `Rng` that can be accessed from multiple threads.
+pub static RNG: LazyLock<Rng> = LazyLock::new(Rng::new);
 
 #[derive(Debug)]
 /// A random number generator with atomically updated state.
