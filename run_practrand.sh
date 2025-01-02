@@ -10,5 +10,5 @@ if [ ! -f "RNG_test" ]; then
     exit 1
 fi
 
-cargo build --release --bin tester
-target/release/tester | ./RNG_test stdin64 -multithreaded
+cargo build --release --bin practrand_input
+target/release/practrand_input | ./RNG_test stdin64 -multithreaded

@@ -17,5 +17,5 @@ lto = true
 codegen-units = 1
 
 [[bin]]
-name = "tester"
-path = "src/tester.rs"
+name = "practrand_input"
+path = "src/practrand_input.rs"
