@@ -1,54 +1,214 @@
-use std::sync::{
-    atomic::{AtomicU64, Ordering},
-    LazyLock,
+use std::{
+    cell::{Cell, LazyCell},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        LazyLock,
+    },
 };
 
-/// A global instance of `Rng` that can be accessed from multiple threads.
-pub static RNG: LazyLock<Rng> = LazyLock::new(Rng::new);
+/// The increment used to update the state of the RNG. This value was selected so that it is
+/// coprime to 2^64, and `INCREMENT / 2^64` is approximately `phi - 1`, where `phi` is the
+/// golden ratio. This produces a low discrepancy sequence with a period of 2^64.
+///
+/// The following Python code was used to find the constant:
+/// ```python
+/// from math import ceil, floor, gcd, sqrt
+///
+/// # The golden ratio
+/// phi = (1 + sqrt(5)) / 2
+///
+/// # The sequence length
+/// n = 1 << 64
+///
+/// # Find the coprime of `n` that is closest to `n * (phi - 1)`
+/// a, b = floor(n * (phi - 1)), ceil(n * (phi - 1))
+/// while True:
+///     if gcd(a, n) == 1:
+///         c = a
+///         break
+///     if gcd(b, n) == 1:
+///         c = b
+///         break
+///     a, b = a - 1, b + 1
+///
+/// assert gcd(c, n) == 1
+///
+/// print(f"Coprime of n = {n} closest to n * {phi - 1} ≈  is {c}")
+/// print(f"The ratio is {c / n}")
+/// ```
+pub(crate) const INCREMENT: u64 = 0x9E3779B97F4A7FFF;
+
+// These constants, like the `INCREMENT` constant, are coprime to 2^64.
+const ALPHA: u128 = 0x11F9ADBB8F8DA6FFF;
+const BETA: u128 = 0x1E3DF208C6781EFFF;
+
+/// A global instance of an `AtomicRng` that can be accessed from multiple threads.
+pub static RNG: LazyLock<AtomicRng> = LazyLock::new(AtomicRng::new);
 
 #[derive(Debug)]
-/// A random number generator with atomically updated state.
+/// A random number generator with atomically updated state, suitable for use in concurrent
+/// environments.
+///
+/// The implementation is based on hashing the Weyl sequence with `wyhash`, adapted from
+/// https://github.com/lemire/testingRNG/blob/master/source/wyhash.h.
+pub struct AtomicRng {
+    /// The current state of the RNG.
+    state: AtomicU64,
+}
+
+#[derive(Debug)]
+/// A random number generator that can be used in single-threaded contexts without a mutable
+/// reference.
 ///
 /// The implementation is based on hashing the Weyl sequence with `wyhash`, adapted from
 /// https://github.com/lemire/testingRNG/blob/master/source/wyhash.h.
 pub struct Rng {
     /// The current state of the RNG.
-    state: AtomicU64,
+    state: Cell<u64>,
+}
+
+impl AtomicRng {
+    /// Returns a random value of type `T` in the range `[low, high)`.
+    ///
+    /// # Example
+    /// ```
+    /// # use randy::AtomicRng;
+    /// let rng = AtomicRng::new();
+    /// let value: u32 = rng.bounded(10, 20);
+    /// assert!(value >= 10 && value < 20);
+    /// ```
+    pub fn bounded<T>(&self, low: T, high: T) -> T
+    where
+        T: FromGenerator<Self>,
+    {
+        T::from_generator_bounded(self, low, high)
+    }
+
+    /// Chooses a random element from the slice `data` and returns a reference to it. If the slice
+    /// is empty, returns `None`.
+    ///
+    /// # Example
+    /// ```
+    /// # use randy::AtomicRng;
+    /// let rng = AtomicRng::new();
+    /// let data = [1, 2, 3, 4, 5];
+    /// let value = rng.choose(&data);
+    /// println!("{value:?}");
+    /// ```
+    pub fn choose<'a, T>(&'a self, data: &'a [T]) -> Option<&'a T> {
+        if data.is_empty() {
+            None
+        } else {
+            let index = usize::from_generator_bounded(self, 0, data.len());
+            Some(&data[index])
+        }
+    }
+
+    /// Fills the slice `data` with random bytes, replacing the existing contents. The length of the
+    /// slice must be a multiple of 8.
+    pub fn fill_bytes(&self, data: &mut [u8]) {
+        const CHUNK_SIZE: usize = std::mem::size_of::<u64>();
+        assert!(data.len() % CHUNK_SIZE == 0);
+        for chunk in data.chunks_mut(CHUNK_SIZE) {
+            let value = self.u64();
+            chunk.copy_from_slice(&value.to_ne_bytes());
+        }
+    }
+
+    /// Initializes a new RNG. In release builds, the state is seeded with `std::hash::RandomState`.
+    /// In debug builds, the state is set to a constant to make tests reproducible.
+    ///
+    /// # Example
+    /// ```
+    /// # use randy::AtomicRng;
+    /// let rng = AtomicRng::new();
+    /// let x: u32 = rng.random();
+    /// println!("{x}");
+    /// ```
+    pub fn new() -> Self {
+        let seed = {
+            #[cfg(not(debug_assertions))]
+            {
+                use std::hash::{BuildHasher, RandomState};
+                RandomState::new().hash_one("foo")
+            }
+            #[cfg(debug_assertions)]
+            1234
+        };
+        let state = AtomicU64::new(seed);
+        Self { state }
+    }
+
+    /// Returns a random value of type `T`. For integers, the value is in the range `[T::MIN,
+    /// T::MAX]`. For floating-point numbers, the value is in the range `[0, 1)`.
+    ///
+    /// # Example
+    /// ```
+    /// # use randy::AtomicRng;
+    /// let rng = AtomicRng::new();
+    /// let value: f32 = rng.random();
+    /// println!("{value:?}");
+    /// ```
+    pub fn random<T>(&self) -> T
+    where
+        T: FromGenerator<Self>,
+    {
+        T::from_generator(self)
+    }
+
+    /// Initializes the RNG with the given `seed`.
+    ///
+    /// Note that because there is always effectively just one instance of the RNG, this method
+    /// reseeds the RNG globally.
+    ///
+    /// # Example
+    /// ```
+    /// # use randy::AtomicRng;
+    /// let rng = AtomicRng::new();
+    ///
+    /// rng.reseed(1234);
+    /// let x: u32 = rng.random();
+    ///
+    /// assert_eq!(x, 0xCF47AAE8);
+    /// ```
+    pub fn reseed(&self, seed: u64) {
+        let new_state = seed.wrapping_add(INCREMENT);
+        self.state.store(new_state, Ordering::Relaxed);
+    }
+
+    /// Shuffles the elements of the slice `data` using the Fisher-Yates algorithm.
+    ///
+    /// # Example
+    /// ```
+    /// # use randy::AtomicRng;
+    /// let rng = AtomicRng::new();
+    /// let mut data = [1, 2, 3, 4, 5];
+    /// rng.shuffle(&mut data);
+    /// println!("{data:?}");
+    /// ```
+    pub fn shuffle<T>(&self, data: &mut [T])
+    where
+        usize: FromGenerator<Self>,
+    {
+        let mut end = data.len();
+        while end > 1 {
+            let other = usize::from_generator_bounded(self, 0, end);
+            data.swap(end - 1, other);
+            end -= 1;
+        }
+    }
+
+    /// Returns the next `u64` value from the pseudorandom sequence.
+    fn u64(&self) -> u64 {
+        // Read the current state and increment it
+        let old_state = self.state.fetch_add(INCREMENT, Ordering::Relaxed);
+
+        // Hash the old state to produce the next value
+        wyhash(old_state)
+    }
 }
 
 impl Rng {
-    /// The increment used to update the state of the RNG. This value was selected so that it is
-    /// coprime to 2^64, and `INCREMENT / 2^64` is approximately `phi - 1`, where `phi` is the
-    /// golden ratio. This produces a low discrepancy sequence with a period of 2^64.
-    ///
-    /// The following Python code was used to find the constant:
-    /// ```python
-    /// from math import ceil, floor, gcd, sqrt
-    ///
-    /// # The golden ratio
-    /// phi = (1 + sqrt(5)) / 2
-    ///
-    /// # The sequence length
-    /// n = 1 << 64
-    ///
-    /// # Find the coprime of `n` that is closest to `n * (phi - 1)`
-    /// a, b = floor(n * (phi - 1)), ceil(n * (phi - 1))
-    /// while True:
-    ///     if gcd(a, n) == 1:
-    ///         c = a
-    ///         break
-    ///     if gcd(b, n) == 1:
-    ///         c = b
-    ///         break
-    ///     a, b = a - 1, b + 1
-    ///
-    /// assert gcd(c, n) == 1
-    ///
-    /// print(f"Coprime of n = {n} closest to n * {phi - 1} ≈  is {c}")
-    /// print(f"The ratio is {c / n}")
-    /// ```
-    pub(crate) const INCREMENT: u64 = 0x9E3779B97F4A7FFF;
-
     /// Returns a random value of type `T` in the range `[low, high)`.
     ///
     /// # Example
@@ -60,7 +220,7 @@ impl Rng {
     /// ```
     pub fn bounded<T>(&self, low: T, high: T) -> T
     where
-        T: FromGenerator<Rng>,
+        T: FromGenerator<Self>,
     {
         T::from_generator_bounded(self, low, high)
     }
@@ -116,7 +276,7 @@ impl Rng {
             #[cfg(debug_assertions)]
             1234
         };
-        let state = AtomicU64::new(seed);
+        let state = Cell::new(seed);
         Self { state }
     }
 
@@ -132,7 +292,7 @@ impl Rng {
     /// ```
     pub fn random<T>(&self) -> T
     where
-        T: FromGenerator<Rng>,
+        T: FromGenerator<Self>,
     {
         T::from_generator(self)
     }
@@ -153,8 +313,8 @@ impl Rng {
     /// assert_eq!(x, 0xCF47AAE8);
     /// ```
     pub fn reseed(&self, seed: u64) {
-        let new_state = seed.wrapping_add(Self::INCREMENT);
-        self.state.store(new_state, Ordering::Relaxed);
+        let new_state = seed.wrapping_add(INCREMENT);
+        self.state.set(new_state);
     }
 
     /// Shuffles the elements of the slice `data` using the Fisher-Yates algorithm.
@@ -169,7 +329,7 @@ impl Rng {
     /// ```
     pub fn shuffle<T>(&self, data: &mut [T])
     where
-        usize: FromGenerator<Rng>,
+        usize: FromGenerator<AtomicRng>,
     {
         let mut end = data.len();
         while end > 1 {
@@ -182,7 +342,8 @@ impl Rng {
     /// Returns the next `u64` value from the pseudorandom sequence.
     fn u64(&self) -> u64 {
         // Read the current state and increment it
-        let old_state = self.state.fetch_add(Self::INCREMENT, Ordering::Relaxed);
+        let old_state = self.state.get();
+        self.state.set(old_state.wrapping_add(INCREMENT));
 
         // Hash the old state to produce the next value
         wyhash(old_state)
@@ -191,10 +352,6 @@ impl Rng {
 
 #[inline]
 pub(crate) fn wyhash(value: u64) -> u64 {
-    // These constants, like the `INCREMENT` constant, are coprime to 2^64.
-    const ALPHA: u128 = 0x11F9ADBB8F8DA6FFF;
-    const BETA: u128 = 0x1E3DF208C6781EFFF;
-
     let mut tmp = (value as u128).wrapping_mul(ALPHA);
     tmp ^= tmp >> 64;
     tmp = tmp.wrapping_mul(BETA);
@@ -214,6 +371,19 @@ pub trait FromGenerator<G> {
 
     /// Creates a value in the range `[low, high)` of type `Self` using `src` as the generator.
     fn from_generator_bounded(src: &G, low: Self, high: Self) -> Self;
+}
+
+impl Default for AtomicRng {
+    /// Returns a new instance of `Rng`.
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Generator<u64> for AtomicRng {
+    fn generate(&self) -> u64 {
+        self.u64()
+    }
 }
 
 impl Default for Rng {

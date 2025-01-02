@@ -6,11 +6,11 @@
 //! # Example
 //!
 //! ```rust
-//! use randy::{Rng, RNG}; // The Rng type and the global RNG
+//! use randy::{AtomicRng, RNG}; // The Rng type and the global RNG
 //! use std::thread;
 //!
 //! //   look mom, not &mut 👇!
-//! fn find_answer(thoughts: &Rng) {
+//! fn find_answer(thoughts: &AtomicRng) {
 //!     match thoughts.random() {
 //!         42 => println!("Got 42! The answer!"),
 //!         x => println!("Got {x}, not the answer"),
@@ -31,4 +31,4 @@
 mod bench;
 mod rng;
 
-pub use rng::{Rng, RNG};
+pub use rng::{AtomicRng, Rng, RNG};
