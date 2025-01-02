@@ -29,9 +29,7 @@ fn think() {
 think();
 ```
 
-The library provides methods to generate random numbers of different types, both with and without bounds, as well as for shuffling and sampling from slices. You can also enable the `rand_core` feature to use the `RngCore` and `SeedableRng` traits from the `rand_core` crate.
-
-```rust
+The library provides methods to generate random numbers of different types, both with and without bounds, as well as for shuffling and sampling from slices. You can also enable the `rand` feature to use the `RngCore` and `SeedableRng` traits from the `rand` crate.
 
 ## Implementation
 
