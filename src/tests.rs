@@ -44,6 +44,7 @@ fn rand_core() {
 }
 
 #[ignore]
+#[allow(dead_code)]
 fn bench() {
     // Benchmark the performance of atomic vs. normal RNG state updates.
     // Run with `cargo test bench --release -- --ignored --nocapture`
