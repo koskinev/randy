@@ -1,5 +1,5 @@
 use std::{
-    cell::{Cell, LazyCell},
+    cell::Cell,
     sync::{
         atomic::{AtomicU64, Ordering},
         LazyLock,
