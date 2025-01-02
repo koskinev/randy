@@ -2,7 +2,7 @@
 
 Since RNGs require mutable state, and Rust enforces exclusive access to mutate data, generating random data in Rust typically requires a mutable reference to an RNG. This can be inconvenient in tests because you might need to initialize several RNGs and pass them around as arguments.
 
-This project provides two simple PRNG that only require immutable access to use. The `AtomicRng` type uses atomics to update its state, and can be shared across threads. The `Rng` type stores its state in a `Cell`, and can be used in single-threaded contexts.
+This project provides two simple PRNGs that only require immutable access to use. The `AtomicRng` type uses atomics to update its state, and can be shared across threads. The `Rng` type stores its state in a `Cell`, and can be used in single-threaded contexts.
 
 ```rust
 use randy::{AtomicRng, RNG};
