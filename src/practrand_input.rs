@@ -1,5 +1,5 @@
-use std::io::{self, Write};
 use rng::Rng;
+use std::io::{self, Write};
 
 #[allow(dead_code)]
 mod rng;
@@ -11,7 +11,7 @@ fn main() {
     let mut buffer = [0; BUFFER_SIZE];
     let mut output = io::stdout();
     loop {
-        rng.fill_bytes(&mut buffer);
+        rng.bytes(&mut buffer);
         output.write_all(&buffer).ok();
     }
 }

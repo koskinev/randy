@@ -6,6 +6,9 @@ use std::{
     },
 };
 
+#[cfg(any(feature = "rand_core", test))]
+use rand_core::{RngCore, SeedableRng};
+
 /// The increment used to update the state of the RNG. This value was selected so that it is
 /// coprime to 2^64, and `INCREMENT / 2^64` is approximately `phi - 1`, where `phi` is the
 /// golden ratio. This produces a low discrepancy sequence with a period of 2^64.
@@ -84,6 +87,20 @@ impl AtomicRng {
         T::from_generator_bounded(self, low, high)
     }
 
+    /// Fills the slice `data` with random bytes
+    pub fn bytes(&self, data: &mut [u8]) {
+        const CHUNK_SIZE: usize = std::mem::size_of::<u64>();
+        for chunk in data.chunks_exact_mut(CHUNK_SIZE) {
+            let value = self.u64();
+            chunk.copy_from_slice(&value.to_ne_bytes());
+        }
+        let last = (data.len() / CHUNK_SIZE) * CHUNK_SIZE;
+        let bytes = self.u64().to_ne_bytes();
+        for (index, byte) in data[last..].iter_mut().enumerate() {
+            *byte = bytes[index];
+        }
+    }
+
     /// Chooses a random element from the slice `data` and returns a reference to it. If the slice
     /// is empty, returns `None`.
     ///
@@ -101,17 +118,6 @@ impl AtomicRng {
         } else {
             let index = usize::from_generator_bounded(self, 0, data.len());
             Some(&data[index])
-        }
-    }
-
-    /// Fills the slice `data` with random bytes, replacing the existing contents. The length of the
-    /// slice must be a multiple of 8.
-    pub fn fill_bytes(&self, data: &mut [u8]) {
-        const CHUNK_SIZE: usize = std::mem::size_of::<u64>();
-        assert!(data.len() % CHUNK_SIZE == 0);
-        for chunk in data.chunks_mut(CHUNK_SIZE) {
-            let value = self.u64();
-            chunk.copy_from_slice(&value.to_ne_bytes());
         }
     }
 
@@ -169,7 +175,7 @@ impl AtomicRng {
     /// rng.reseed(1234);
     /// let x: u32 = rng.random();
     ///
-    /// assert_eq!(x, 0xCF47AAE8);
+    /// assert_eq!(x, 0x4B187B9D);
     /// ```
     pub fn reseed(&self, seed: u64) {
         let new_state = seed.wrapping_add(INCREMENT);
@@ -225,6 +231,20 @@ impl Rng {
         T::from_generator_bounded(self, low, high)
     }
 
+    /// Fills the slice `data` with random bytes
+    pub fn bytes(&self, data: &mut [u8]) {
+        const CHUNK_SIZE: usize = std::mem::size_of::<u64>();
+        for chunk in data.chunks_exact_mut(CHUNK_SIZE) {
+            let value = self.u64();
+            chunk.copy_from_slice(&value.to_ne_bytes());
+        }
+        let last = (data.len() / CHUNK_SIZE) * CHUNK_SIZE;
+        let bytes = self.u64().to_ne_bytes();
+        for (index, byte) in data[last..].iter_mut().enumerate() {
+            *byte = bytes[index];
+        }
+    }
+
     /// Chooses a random element from the slice `data` and returns a reference to it. If the slice
     /// is empty, returns `None`.
     ///
@@ -242,17 +262,6 @@ impl Rng {
         } else {
             let index = usize::from_generator_bounded(self, 0, data.len());
             Some(&data[index])
-        }
-    }
-
-    /// Fills the slice `data` with random bytes, replacing the existing contents. The length of the
-    /// slice must be a multiple of 8.
-    pub fn fill_bytes(&self, data: &mut [u8]) {
-        const CHUNK_SIZE: usize = std::mem::size_of::<u64>();
-        assert!(data.len() % CHUNK_SIZE == 0);
-        for chunk in data.chunks_mut(CHUNK_SIZE) {
-            let value = self.u64();
-            chunk.copy_from_slice(&value.to_ne_bytes());
         }
     }
 
@@ -310,7 +319,7 @@ impl Rng {
     /// rng.reseed(1234);
     /// let x: u32 = rng.random();
     ///
-    /// assert_eq!(x, 0xCF47AAE8);
+    /// assert_eq!(x, 0x4B187B9D);
     /// ```
     pub fn reseed(&self, seed: u64) {
         let new_state = seed.wrapping_add(INCREMENT);
@@ -386,6 +395,37 @@ impl Generator<u64> for AtomicRng {
     }
 }
 
+#[cfg(any(feature = "rand_core", test))]
+impl RngCore for &AtomicRng {
+    fn next_u32(&mut self) -> u32 {
+        (self.u64() >> 32) as _
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        self.u64()
+    }
+
+    fn fill_bytes(&mut self, dest: &mut [u8]) {
+        self.bytes(dest);
+    }
+
+    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand_core::Error> {
+        self.fill_bytes(dest);
+        Ok(())
+    }
+}
+
+#[cfg(any(feature = "rand_core", test))]
+impl SeedableRng for AtomicRng {
+    type Seed = [u8; 8];
+
+    fn from_seed(seed: Self::Seed) -> Self {
+        let seed = u64::from_ne_bytes(seed);
+        let state = AtomicU64::new(seed);
+        AtomicRng { state }
+    }
+}
+
 impl Default for Rng {
     /// Returns a new instance of `Rng`.
     fn default() -> Self {
@@ -396,6 +436,37 @@ impl Default for Rng {
 impl Generator<u64> for Rng {
     fn generate(&self) -> u64 {
         self.u64()
+    }
+}
+
+#[cfg(any(feature = "rand_core", test))]
+impl RngCore for &Rng {
+    fn next_u32(&mut self) -> u32 {
+        (self.u64() >> 32) as _
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        self.u64()
+    }
+
+    fn fill_bytes(&mut self, dest: &mut [u8]) {
+        self.bytes(dest);
+    }
+
+    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand_core::Error> {
+        self.fill_bytes(dest);
+        Ok(())
+    }
+}
+
+#[cfg(any(feature = "rand_core", test))]
+impl SeedableRng for Rng {
+    type Seed = [u8; 8];
+
+    fn from_seed(seed: Self::Seed) -> Self {
+        let seed = u64::from_ne_bytes(seed);
+        let state = Cell::new(seed);
+        Rng { state }
     }
 }
 
@@ -477,7 +548,7 @@ where
     G: Generator<u64>,
 {
     fn from_generator(src: &G) -> Self {
-        src.generate() as _
+        (src.generate() >> (u64::BITS - Self::BITS)) as _
     }
 
     fn from_generator_bounded(src: &G, low: Self, high: Self) -> Self {
@@ -529,7 +600,7 @@ where
     G: Generator<u64>,
 {
     fn from_generator(src: &G) -> Self {
-        src.generate() as _
+        (src.generate() >> (u64::BITS - Self::BITS)) as _
     }
 
     fn from_generator_bounded(src: &G, low: Self, high: Self) -> Self {
@@ -581,7 +652,7 @@ where
     G: Generator<u64>,
 {
     fn from_generator(src: &G) -> Self {
-        src.generate() as _
+        (src.generate() >> (u64::BITS - Self::BITS)) as _
     }
 
     fn from_generator_bounded(src: &G, low: Self, high: Self) -> Self {

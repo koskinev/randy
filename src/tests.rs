@@ -33,6 +33,16 @@ fn readme_example() {
 }
 
 #[test]
+fn rand_core() {
+    use rand_core::{RngCore, SeedableRng};
+    use randy::Rng;
+
+    let mut rng = &Rng::from_seed([0; 8]);
+    let mut buffer = [0; 32];
+    rng.fill_bytes(&mut buffer);
+    assert_ne!(buffer, [0; 32]);
+}
+
 #[ignore]
 fn bench() {
     // Benchmark the performance of atomic vs. normal RNG state updates.
