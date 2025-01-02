@@ -6,9 +6,6 @@ use std::{
     },
 };
 
-#[cfg(any(feature = "rand", test))]
-use rand::{RngCore, SeedableRng};
-
 /// The increment used to update the state of the RNG. This value was selected so that it is
 /// coprime to 2^64, and `INCREMENT / 2^64` is approximately `phi - 1`, where `phi` is the
 /// golden ratio. This produces a low discrepancy sequence with a period of 2^64.
