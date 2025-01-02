@@ -1,4 +1,4 @@
-# An RNG with atomically updating state
+# RNGs that don't require mutable access
 
 Since RNGs require mutable state, and Rust enforces exclusive access to mutate data, generating random data in Rust typically requires a mutable reference to an RNG. This can be inconvenient in tests because you might need to initialize several RNGs and pass them around as arguments.
 
@@ -29,7 +29,9 @@ fn think() {
 think();
 ```
 
-The library provides methods to generate random numbers of different types, both with and without bounds, as well as for shuffling and sampling from slices.
+The library provides methods to generate random numbers of different types, both with and without bounds, as well as for shuffling and sampling from slices. You can also enable the `rand_core` feature to use the `RngCore` and `SeedableRng` traits from the `rand_core` crate.
+
+```rust
 
 ## Implementation
 
