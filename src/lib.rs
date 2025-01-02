@@ -27,8 +27,11 @@
 //! think();
 //! ```
 
+#[cfg(any(feature = "rand", test))]
+mod rand_support;
 #[cfg(test)]
 mod tests;
+
 mod rng;
 
 pub use rng::{AtomicRng, Rng, RNG};

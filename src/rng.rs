@@ -6,8 +6,8 @@ use std::{
     },
 };
 
-#[cfg(any(feature = "rand_core", test))]
-use rand_core::{RngCore, SeedableRng};
+#[cfg(any(feature = "rand", test))]
+use rand::{RngCore, SeedableRng};
 
 /// The increment used to update the state of the RNG. This value was selected so that it is
 /// coprime to 2^64, and `INCREMENT / 2^64` is approximately `phi - 1`, where `phi` is the
@@ -56,7 +56,7 @@ pub static RNG: LazyLock<AtomicRng> = LazyLock::new(AtomicRng::new);
 /// https://github.com/lemire/testingRNG/blob/master/source/wyhash.h.
 pub struct AtomicRng {
     /// The current state of the RNG.
-    state: AtomicU64,
+    pub(crate) state: AtomicU64,
 }
 
 #[derive(Debug)]
@@ -67,7 +67,7 @@ pub struct AtomicRng {
 /// https://github.com/lemire/testingRNG/blob/master/source/wyhash.h.
 pub struct Rng {
     /// The current state of the RNG.
-    state: Cell<u64>,
+    pub(crate) state: Cell<u64>,
 }
 
 impl AtomicRng {
@@ -178,8 +178,7 @@ impl AtomicRng {
     /// assert_eq!(x, 0x4B187B9D);
     /// ```
     pub fn reseed(&self, seed: u64) {
-        let new_state = seed.wrapping_add(INCREMENT);
-        self.state.store(new_state, Ordering::Relaxed);
+        self.state.store(seed, Ordering::Relaxed);
     }
 
     /// Shuffles the elements of the slice `data` using the Fisher-Yates algorithm.
@@ -205,7 +204,7 @@ impl AtomicRng {
     }
 
     /// Returns the next `u64` value from the pseudorandom sequence.
-    fn u64(&self) -> u64 {
+    pub(crate) fn u64(&self) -> u64 {
         // Read the current state and increment it
         let old_state = self.state.fetch_add(INCREMENT, Ordering::Relaxed);
 
@@ -322,8 +321,7 @@ impl Rng {
     /// assert_eq!(x, 0x4B187B9D);
     /// ```
     pub fn reseed(&self, seed: u64) {
-        let new_state = seed.wrapping_add(INCREMENT);
-        self.state.set(new_state);
+        self.state.set(seed);
     }
 
     /// Shuffles the elements of the slice `data` using the Fisher-Yates algorithm.
@@ -349,7 +347,7 @@ impl Rng {
     }
 
     /// Returns the next `u64` value from the pseudorandom sequence.
-    fn u64(&self) -> u64 {
+    pub(crate) fn u64(&self) -> u64 {
         // Read the current state and increment it
         let old_state = self.state.get();
         self.state.set(old_state.wrapping_add(INCREMENT));
@@ -395,37 +393,6 @@ impl Generator<u64> for AtomicRng {
     }
 }
 
-#[cfg(any(feature = "rand_core", test))]
-impl RngCore for &AtomicRng {
-    fn next_u32(&mut self) -> u32 {
-        (self.u64() >> 32) as _
-    }
-
-    fn next_u64(&mut self) -> u64 {
-        self.u64()
-    }
-
-    fn fill_bytes(&mut self, dest: &mut [u8]) {
-        self.bytes(dest);
-    }
-
-    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand_core::Error> {
-        self.fill_bytes(dest);
-        Ok(())
-    }
-}
-
-#[cfg(any(feature = "rand_core", test))]
-impl SeedableRng for AtomicRng {
-    type Seed = [u8; 8];
-
-    fn from_seed(seed: Self::Seed) -> Self {
-        let seed = u64::from_ne_bytes(seed);
-        let state = AtomicU64::new(seed);
-        AtomicRng { state }
-    }
-}
-
 impl Default for Rng {
     /// Returns a new instance of `Rng`.
     fn default() -> Self {
@@ -436,37 +403,6 @@ impl Default for Rng {
 impl Generator<u64> for Rng {
     fn generate(&self) -> u64 {
         self.u64()
-    }
-}
-
-#[cfg(any(feature = "rand_core", test))]
-impl RngCore for &Rng {
-    fn next_u32(&mut self) -> u32 {
-        (self.u64() >> 32) as _
-    }
-
-    fn next_u64(&mut self) -> u64 {
-        self.u64()
-    }
-
-    fn fill_bytes(&mut self, dest: &mut [u8]) {
-        self.bytes(dest);
-    }
-
-    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand_core::Error> {
-        self.fill_bytes(dest);
-        Ok(())
-    }
-}
-
-#[cfg(any(feature = "rand_core", test))]
-impl SeedableRng for Rng {
-    type Seed = [u8; 8];
-
-    fn from_seed(seed: Self::Seed) -> Self {
-        let seed = u64::from_ne_bytes(seed);
-        let state = Cell::new(seed);
-        Rng { state }
     }
 }
 

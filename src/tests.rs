@@ -8,7 +8,7 @@ use crate::rng::{wyhash, INCREMENT};
 
 #[test]
 fn readme_example() {
-    use randy::{AtomicRng, RNG};
+    use randy::{AtomicRng, RNG}; // The atomic RNG type and the static RNG
     use std::thread;
 
     // A function that takes a reference to the RNG
@@ -34,7 +34,7 @@ fn readme_example() {
 
 #[test]
 fn rand_core() {
-    use rand_core::{RngCore, SeedableRng};
+    use rand::{RngCore, SeedableRng};
     use randy::Rng;
 
     let mut rng = &Rng::from_seed([0; 8]);
