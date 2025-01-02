@@ -28,7 +28,7 @@
 //! ```
 
 #[cfg(test)]
-mod bench;
+mod tests;
 mod rng;
 
 pub use rng::{AtomicRng, Rng, RNG};

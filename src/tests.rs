@@ -3,7 +3,34 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
+use crate as randy;
 use crate::rng::{wyhash, INCREMENT};
+
+#[test]
+fn readme_example() {
+    use randy::{AtomicRng, RNG};
+    use std::thread;
+
+    // A function that takes a reference to the RNG
+    //
+    //   look mom, not &mut 👇!
+    fn find_answer(thoughts: &AtomicRng) {
+        match thoughts.random() {
+            42 => println!("Got 42! The answer!"),
+            x => println!("Got {x}, not the answer"),
+        }
+    }
+
+    // A function that uses the global RNG across threads
+    fn think() {
+        thread::scope(|s| {
+            (0..4).for_each(|_| {
+                s.spawn(|| find_answer(&RNG));
+            });
+        });
+    }
+    think();
+}
 
 #[test]
 #[ignore]
