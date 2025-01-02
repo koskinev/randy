@@ -5,7 +5,7 @@ Since RNGs require mutable state, and Rust enforces exclusive access to mutate d
 This project provides two simple PRNGs that only require immutable access to use. The `AtomicRng` type uses atomics to update its state, and can be shared across threads. The `Rng` type stores its state in a `Cell`, and can be used in single-threaded contexts.
 
 ```rust
-use randy::{AtomicRng, RNG};
+use randy::{AtomicRng, RNG}; // The atomic RNG type and the static RNG
 use std::thread;
 
 // A function that takes a reference to the RNG
