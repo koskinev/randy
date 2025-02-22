@@ -27,8 +27,6 @@
 //! think();
 //! ```
 
-#[cfg(any(feature = "rand", test))]
-mod rand_support;
 #[cfg(test)]
 mod tests;
 
