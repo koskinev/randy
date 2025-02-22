@@ -56,14 +56,59 @@ fn readme_example() {
 }
 
 #[test]
-fn rand_core() {
-    use rand::{RngCore, SeedableRng};
-    use randy::Rng;
+fn test_rng_random_numbers() {
+    let rng = randy::rng::Rng::new();
+    let a: u32 = rng.random();
+    let b: u32 = rng.random();
+    // Verify that successive calls generate different numbers.
+    assert_ne!(a, b, "Rng::random() should generate varying numbers");
+}
 
-    let mut rng = &Rng::from_seed([0; 8]);
-    let mut buffer = [0; 32];
-    rng.fill_bytes(&mut buffer);
-    assert_ne!(buffer, [0; 32]);
+#[test]
+fn test_atomic_rng_random_numbers() {
+    let atomic_rng = randy::rng::AtomicRng::new();
+    let a: u32 = atomic_rng.random();
+    let b: u32 = atomic_rng.random();
+    // Verify that successive calls generate different numbers.
+    assert_ne!(a, b, "AtomicRng::random() should generate varying numbers");
+}
+
+#[test]
+fn test_rng_bounded_range() {
+    let rng = randy::rng::Rng::new();
+    for _ in 0..1000 {
+        let x: u32 = rng.bounded(50..60);
+        assert!((50..60).contains(&x), "Rng::bounded() value should be within [50, 60)");
+    }
+}
+
+#[test]
+fn test_atomic_rng_bounded_range() {
+    let atomic_rng = randy::rng::AtomicRng::new();
+    for _ in 0..1000 {
+        let x: u32 = atomic_rng.bounded(100..110);
+        assert!((100..110).contains(&x), "AtomicRng::bounded() value should be within [100, 110)");
+    }
+}
+
+#[test]
+fn test_rng_reseed() {
+    let rng = randy::rng::Rng::new();
+    rng.reseed(42);
+    let val1: u32 = rng.random();
+    rng.reseed(42);
+    let val2: u32 = rng.random();
+    assert_eq!(val1, val2, "Rng should produce the same output after reseeding with the same seed");
+}
+
+#[test]
+fn test_atomic_rng_reseed() {
+    let rng = randy::rng::AtomicRng::new();
+    rng.reseed(42);
+    let val1: u32 = rng.random();
+    rng.reseed(42);
+    let val2: u32 = rng.random();
+    assert_eq!(val1, val2, "AtomicRng should produce the same output after reseeding with the same seed");
 }
 
 #[ignore]
