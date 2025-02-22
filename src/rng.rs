@@ -1,5 +1,6 @@
 use std::{
     cell::Cell,
+    ops::{Bound, RangeBounds},
     sync::{
         atomic::{AtomicU64, Ordering},
         LazyLock,
@@ -42,6 +43,7 @@ pub(crate) const INCREMENT: u64 = 0x9E3779B97F4A7FFF;
 const ALPHA: u128 = 0x11F9ADBB8F8DA6FFF;
 const BETA: u128 = 0x1E3DF208C6781EFFF;
 
+#[allow(dead_code)]
 /// A global instance of an `AtomicRng` that can be accessed from multiple threads.
 pub static RNG: LazyLock<AtomicRng> = LazyLock::new(AtomicRng::new);
 
@@ -67,6 +69,7 @@ pub struct Rng {
     pub(crate) state: Cell<u64>,
 }
 
+#[allow(dead_code)]
 impl AtomicRng {
     /// Returns a random value of type `T` in the range `[low, high)`.
     ///
@@ -74,14 +77,15 @@ impl AtomicRng {
     /// ```
     /// # use randy::AtomicRng;
     /// let rng = AtomicRng::new();
-    /// let value: u32 = rng.bounded(10, 20);
+    /// let value: u32 = rng.bounded(10..20);
     /// assert!(value >= 10 && value < 20);
     /// ```
-    pub fn bounded<T>(&self, low: T, high: T) -> T
+    pub fn bounded<T, R>(&self, range: R) -> T
     where
-        T: FromGenerator<Self>,
+        T: RandomRange<Self>,
+        R: RangeBounds<T>,
     {
-        T::from_generator_bounded(self, low, high)
+        T::random_range(self, range)
     }
 
     /// Fills the slice `data` with random bytes
@@ -113,7 +117,7 @@ impl AtomicRng {
         if data.is_empty() {
             None
         } else {
-            let index = usize::from_generator_bounded(self, 0, data.len());
+            let index = usize::random_range(self, 0..data.len());
             Some(&data[index])
         }
     }
@@ -154,9 +158,9 @@ impl AtomicRng {
     /// ```
     pub fn random<T>(&self) -> T
     where
-        T: FromGenerator<Self>,
+        T: Random<Self>,
     {
-        T::from_generator(self)
+        T::random(self)
     }
 
     /// Initializes the RNG with the given `seed`.
@@ -172,7 +176,7 @@ impl AtomicRng {
     /// rng.reseed(1234);
     /// let x: u32 = rng.random();
     ///
-    /// assert_eq!(x, 0x4B187B9D);
+    /// assert_eq!(x, 0xB0333BFC);
     /// ```
     pub fn reseed(&self, seed: u64) {
         self.state.store(seed, Ordering::Relaxed);
@@ -190,11 +194,11 @@ impl AtomicRng {
     /// ```
     pub fn shuffle<T>(&self, data: &mut [T])
     where
-        usize: FromGenerator<Self>,
+        usize: RandomRange<Self>,
     {
         let mut end = data.len();
         while end > 1 {
-            let other = usize::from_generator_bounded(self, 0, end);
+            let other = usize::random_range(self, 0..end);
             data.swap(end - 1, other);
             end -= 1;
         }
@@ -210,6 +214,7 @@ impl AtomicRng {
     }
 }
 
+#[allow(dead_code)]
 impl Rng {
     /// Returns a random value of type `T` in the range `[low, high)`.
     ///
@@ -217,14 +222,15 @@ impl Rng {
     /// ```
     /// # use randy::Rng;
     /// let rng = Rng::new();
-    /// let value: u32 = rng.bounded(10, 20);
+    /// let value: u32 = rng.bounded(10..20);
     /// assert!(value >= 10 && value < 20);
     /// ```
-    pub fn bounded<T>(&self, low: T, high: T) -> T
+    pub fn bounded<T, R>(&self, range: R) -> T
     where
-        T: FromGenerator<Self>,
+        T: RandomRange<Self>,
+        R: RangeBounds<T>,
     {
-        T::from_generator_bounded(self, low, high)
+        T::random_range(self, range)
     }
 
     /// Fills the slice `data` with random bytes
@@ -256,7 +262,7 @@ impl Rng {
         if data.is_empty() {
             None
         } else {
-            let index = usize::from_generator_bounded(self, 0, data.len());
+            let index = usize::random_range(self, 0..data.len());
             Some(&data[index])
         }
     }
@@ -297,9 +303,9 @@ impl Rng {
     /// ```
     pub fn random<T>(&self) -> T
     where
-        T: FromGenerator<Self>,
+        T: Random<Self>,
     {
-        T::from_generator(self)
+        T::random(self)
     }
 
     /// Initializes the RNG with the given `seed`.
@@ -315,7 +321,7 @@ impl Rng {
     /// rng.reseed(1234);
     /// let x: u32 = rng.random();
     ///
-    /// assert_eq!(x, 0x4B187B9D);
+    /// assert_eq!(x, 0xB0333BFC);
     /// ```
     pub fn reseed(&self, seed: u64) {
         self.state.set(seed);
@@ -333,11 +339,11 @@ impl Rng {
     /// ```
     pub fn shuffle<T>(&self, data: &mut [T])
     where
-        usize: FromGenerator<AtomicRng>,
+        usize: Random<Self>,
     {
         let mut end = data.len();
         while end > 1 {
-            let other = usize::from_generator_bounded(self, 0, end);
+            let other = usize::random_range(self, 0..end);
             data.swap(end - 1, other);
             end -= 1;
         }
@@ -368,15 +374,6 @@ pub trait Generator<T> {
     fn generate(&self) -> T;
 }
 
-/// A type that can have values created using a generator.
-pub trait FromGenerator<G> {
-    /// Creates a value of type `Self` using `src` as the generator.
-    fn from_generator(src: &G) -> Self;
-
-    /// Creates a value in the range `[low, high)` of type `Self` using `src` as the generator.
-    fn from_generator_bounded(src: &G, low: Self, high: Self) -> Self;
-}
-
 impl Default for AtomicRng {
     /// Returns a new instance of `Rng`.
     fn default() -> Self {
@@ -403,57 +400,47 @@ impl Generator<u64> for Rng {
     }
 }
 
-impl<G> FromGenerator<G> for bool
-where
-    G: Generator<u32>,
-{
-    fn from_generator(src: &G) -> Self {
-        src.generate().count_ones() % 2 == 0
-    }
-
-    fn from_generator_bounded(src: &G, low: Self, high: Self) -> Self {
-        assert!(!low & high);
-        src.generate().count_ones() % 2 == 0
-    }
+pub trait Random<G> {
+    fn random(generator: &G) -> Self;
 }
 
-impl<G> FromGenerator<G> for f32
+pub trait RandomRange<G> {
+    fn random_range<R>(generator: &G, range: R) -> Self
+    where
+        R: RangeBounds<Self>;
+}
+
+impl<G> Random<G> for bool
 where
     G: Generator<u64>,
 {
-    fn from_generator(src: &G) -> Self {
-        ((src.generate() >> 40) as f32) * (-24_f32).exp2()
-    }
-
-    fn from_generator_bounded(src: &G, low: Self, high: Self) -> Self {
-        assert!(low < high);
-        let value = Self::from_generator(src);
-        let range = high - low;
-        assert!(range > 0.0);
-        value * range + low
+    fn random(generator: &G) -> Self {
+        generator.generate().count_ones() % 2 == 0
     }
 }
 
-impl<G> FromGenerator<G> for f64
+impl<G> Random<G> for f32
 where
     G: Generator<u64>,
 {
-    fn from_generator(src: &G) -> Self {
-        ((src.generate() >> 11) as f64) * (-53_f64).exp2()
+    fn random(generator: &G) -> Self {
+        ((generator.generate() >> 40) as f32) * (-24_f32).exp2()
     }
+}
 
-    fn from_generator_bounded(src: &G, low: Self, high: Self) -> Self {
-        assert!(low < high);
-        let value = Self::from_generator(src);
-        let range = high - low;
-        value * range + low
+impl<G> Random<G> for f64
+where
+    G: Generator<u64>,
+{
+    fn random(generator: &G) -> Self {
+        ((generator.generate() >> 11) as f64) * (-53_f64).exp2()
 
         // // A more accurate version ported from http://mumble.net/~campbell/tmp/random_real.c
         // let mut exponent = -64;
         // let mut significand;
 
         // loop {
-        //     significand = Self::from_generator(src);
+        //     significand = generator.generate();
         //     if significand != 0 {
         //         break;
         //     }
@@ -467,7 +454,7 @@ where
         // if shift != 0 {
         //     exponent -= shift as i32;
         //     significand <<= shift;
-        //     significand |= Self::from_generator(src) >> (64 - shift);
+        //     significand |= generator.generate() >> (64 - shift);
         // }
 
         // significand |= 1;
@@ -476,313 +463,290 @@ where
     }
 }
 
-impl<G> FromGenerator<G> for u8
+impl<G> Random<G> for u128
 where
     G: Generator<u64>,
 {
-    fn from_generator(src: &G) -> Self {
-        (src.generate() >> (u64::BITS - Self::BITS)) as _
-    }
-
-    fn from_generator_bounded(src: &G, low: Self, high: Self) -> Self {
-        assert!(low < high);
-        let range = high - low;
-        let mut x = Self::from_generator(src);
-        let mut m = (x as u16) * (range as u16);
-        let mut l = m as u8;
-        if l < range {
-            let mut t = u8::MAX - range;
-            if t >= range {
-                t -= range;
-                if t >= range {
-                    t %= range;
-                }
-            }
-            while l < t {
-                x = Self::from_generator(src);
-                m = (x as u16) * (range as u16);
-                l = m as u8;
-            }
-        }
-        (m >> 8) as u8 + low
+    fn random(generator: &G) -> Self {
+        let low = generator.generate() as u128;
+        let high = generator.generate() as u128;
+        (high << 64) | low
     }
 }
 
-impl<G> FromGenerator<G> for i8
+impl<G> Random<G> for i128
 where
     G: Generator<u64>,
 {
-    fn from_generator(src: &G) -> Self {
-        src.generate() as _
+    fn random(generator: &G) -> Self {
+        let low = generator.generate() as u128;
+        let high = generator.generate() as u128;
+        ((high << 64) | low) as _
     }
+}
 
-    fn from_generator_bounded(src: &G, low: Self, high: Self) -> Self {
-        assert!(low < high);
-        let range = high.abs_diff(low);
-        let x = u8::from_generator_bounded(src, 0, range);
-        if x > i8::MAX as u8 {
-            (x - low as u8) as _
-        } else {
-            (x + low as u8) as _
+impl<G> Random<G> for usize
+where
+    G: Generator<u64>,
+{
+    fn random(generator: &G) -> Self {
+        match core::mem::size_of::<usize>() {
+            4 => generator.generate() as _,
+            8 => generator.generate() as _,
+            16 => ((generator.generate() as u128) << 64 | generator.generate() as u128) as _,
+            _ => panic!("Unsupported usize size"),
         }
     }
 }
 
-impl<G> FromGenerator<G> for u16
+impl<G> Random<G> for isize
 where
     G: Generator<u64>,
 {
-    fn from_generator(src: &G) -> Self {
-        (src.generate() >> (u64::BITS - Self::BITS)) as _
-    }
-
-    fn from_generator_bounded(src: &G, low: Self, high: Self) -> Self {
-        assert!(low < high);
-        let range = high - low;
-        let mut x = Self::from_generator(src);
-        let mut m = (x as u32) * (range as u32);
-        let mut l = m as u16;
-        if l < range {
-            let mut t = u16::MAX - range;
-            if t >= range {
-                t -= range;
-                if t >= range {
-                    t %= range;
-                }
-            }
-            while l < t {
-                x = Self::from_generator(src);
-                m = (x as u32) * (range as u32);
-                l = m as u16;
-            }
-        }
-        (m >> 16) as u16 + low
-    }
-}
-
-impl<G> FromGenerator<G> for i16
-where
-    G: Generator<u64>,
-{
-    fn from_generator(src: &G) -> Self {
-        src.generate() as _
-    }
-
-    fn from_generator_bounded(src: &G, low: Self, high: Self) -> Self {
-        assert!(low < high);
-        let range = high.abs_diff(low);
-        let x = u16::from_generator_bounded(src, 0, range);
-        if x > i16::MAX as u16 {
-            (x - low as u16) as _
-        } else {
-            (x + low as u16) as _
+    fn random(generator: &G) -> Self {
+        match core::mem::size_of::<isize>() {
+            4 => generator.generate() as _,
+            8 => generator.generate() as _,
+            16 => ((generator.generate() as u128) << 64 | generator.generate() as u128) as _,
+            _ => panic!("Unsupported isize size"),
         }
     }
 }
 
-impl<G> FromGenerator<G> for u32
+impl<G, T, const N: usize> Random<G> for [T; N]
 where
-    G: Generator<u64>,
+    T: Random<G> + Sized,
 {
-    fn from_generator(src: &G) -> Self {
-        (src.generate() >> (u64::BITS - Self::BITS)) as _
-    }
-
-    fn from_generator_bounded(src: &G, low: Self, high: Self) -> Self {
-        assert!(low < high);
-        let range = high - low;
-        let mut x = Self::from_generator(src);
-        let mut m = (x as u64) * (range as u64);
-        let mut l = m as u32;
-        if l < range {
-            let mut t = u32::MAX - range;
-            if t >= range {
-                t -= range;
-                if t >= range {
-                    t %= range;
-                }
-            }
-            while l < t {
-                x = Self::from_generator(src);
-                m = (x as u64) * (range as u64);
-                l = m as u32;
-            }
-        }
-        (m >> 32) as u32 + low
+    fn random(generator: &G) -> Self {
+        core::array::from_fn(|_| T::random(generator))
     }
 }
 
-impl<G> FromGenerator<G> for i32
+impl<G> RandomRange<G> for u128
 where
     G: Generator<u64>,
 {
-    fn from_generator(src: &G) -> Self {
-        src.generate() as _
-    }
+    fn random_range<R>(generator: &G, range: R) -> Self
+    where
+        R: RangeBounds<Self>,
+    {
+        let low = match range.start_bound() {
+            Bound::Included(&low) => low,
+            Bound::Excluded(&low) => low.saturating_add(1),
+            Bound::Unbounded => 0,
+        };
 
-    fn from_generator_bounded(src: &G, low: Self, high: Self) -> Self {
-        assert!(low < high);
-        let range = high.abs_diff(low);
-        let x = u32::from_generator_bounded(src, 0, range);
-        if x > i32::MAX as u32 {
-            (x - low as u32) as _
-        } else {
-            (x + low as u32) as _
-        }
-    }
-}
+        assert!(
+            range.contains(&low),
+            "cannot generate a value from an empty range"
+        );
+        let width = match range.end_bound() {
+            Bound::Included(&high) => high - low + 1,
+            Bound::Excluded(&high) => high - low,
+            Bound::Unbounded if low > 0 => u128::MAX.abs_diff(low + 1),
+            _ => return Self::random(generator),
+        };
 
-impl<G> FromGenerator<G> for u64
-where
-    G: Generator<u64>,
-{
-    fn from_generator(src: &G) -> Self {
-        src.generate()
-    }
-
-    fn from_generator_bounded(src: &G, low: Self, high: Self) -> Self {
-        assert!(low < high);
-        let range = high - low;
-        let mut x = src.generate();
-        let mut m = (x as u128) * (range as u128);
-        let mut l = m as u64;
-        if l < range {
-            let mut t = u64::MAX - range;
-            if t >= range {
-                t -= range;
-                if t >= range {
-                    t %= range;
-                }
-            }
-            while l < t {
-                x = src.generate();
-                m = (x as u128) * (range as u128);
-                l = m as u64;
-            }
-        }
-        (m >> 64) as u64 + low
-    }
-}
-
-impl<G> FromGenerator<G> for i64
-where
-    G: Generator<u64>,
-{
-    fn from_generator(src: &G) -> Self {
-        src.generate() as _
-    }
-
-    fn from_generator_bounded(src: &G, low: Self, high: Self) -> Self {
-        assert!(low < high);
-        let range = high.abs_diff(low);
-        let x = u64::from_generator_bounded(src, 0, range);
-        if x > i64::MAX as u64 {
-            (x - low as u64) as _
-        } else {
-            (x + low as u64) as _
-        }
-    }
-}
-
-impl<G> FromGenerator<G> for u128
-where
-    G: Generator<u64>,
-{
-    fn from_generator(src: &G) -> Self {
-        (src.generate() as u128) << 64 | src.generate() as u128
-    }
-
-    fn from_generator_bounded(src: &G, low: Self, high: Self) -> Self {
-        assert!(low < high);
-        let range = high - low;
-        let mask = u128::MAX >> range.leading_zeros();
+        let mut mask = u128::MAX;
+        mask >>= ((width - 1) | 1).leading_zeros();
+        let mut x;
         loop {
-            let value = u128::from_generator(src);
-            let x = value & mask;
-            if x < range {
-                return x + low;
+            x = Self::random(generator) & mask;
+            if x < width {
+                break;
             }
         }
+        x
     }
 }
 
-impl<G> FromGenerator<G> for i128
+impl<G> RandomRange<G> for usize
 where
     G: Generator<u64>,
 {
-    fn from_generator(src: &G) -> Self {
-        ((src.generate() as u128) << 64 | src.generate() as u128) as _
-    }
+    fn random_range<R>(generator: &G, range: R) -> Self
+    where
+        R: RangeBounds<Self>,
+    {
+        let low = match range.start_bound() {
+            Bound::Included(&low) => low,
+            Bound::Excluded(&low) => low.saturating_add(1),
+            Bound::Unbounded => 0,
+        };
 
-    fn from_generator_bounded(src: &G, low: Self, high: Self) -> Self {
-        assert!(low < high);
-        let range = high.abs_diff(low);
-        let x = u128::from_generator_bounded(src, 0, range);
-        if x > i128::MAX as u128 {
-            (x - low as u128) as _
-        } else {
-            (x + low as u128) as _
-        }
-    }
-}
+        assert!(
+            range.contains(&low),
+            "cannot generate a value from an empty range"
+        );
+        let width = match range.end_bound() {
+            Bound::Included(&high) => high - low + 1,
+            Bound::Excluded(&high) => high - low,
+            Bound::Unbounded if low > 0 => usize::MAX.abs_diff(low + 1),
+            _ => return Self::random(generator),
+        };
 
-impl<G> FromGenerator<G> for usize
-where
-    G: Generator<u64>,
-{
-    fn from_generator(src: &G) -> Self {
         match core::mem::size_of::<usize>() {
-            4 => src.generate() as _,
-            8 => src.generate() as _,
-            16 => ((src.generate() as u128) << 64 | src.generate() as u128) as _,
+            4 => {
+                let mut x = Self::random(generator);
+                let mut m = (x as u64) * (width as u64);
+                let mut l = m as usize;
+                if l < width {
+                    let mut t = usize::MAX - width;
+                    if t >= width {
+                        t -= width;
+                        if t >= width {
+                            t %= width;
+                        }
+                    }
+                    while l < t {
+                        x = Self::random(generator);
+                        m = (x as u64) * (width as u64);
+                        l = m as usize;
+                    }
+                }
+                (m >> u32::BITS) as usize + low
+            }
+            8 => {
+                let mut x = Self::random(generator);
+                let mut m = (x as u128) * (width as u128);
+                let mut l = m as usize;
+                if l < width {
+                    let mut t = usize::MAX - width;
+                    if t >= width {
+                        t -= width;
+                        if t >= width {
+                            t %= width;
+                        }
+                    }
+                    while l < t {
+                        x = Self::random(generator);
+                        m = (x as u128) * (width as u128);
+                        l = m as usize;
+                    }
+                }
+                (m >> u64::BITS) as usize + low
+            }
+            16 => {
+                let mut mask = usize::MAX;
+                mask >>= ((width - 1) | 1).leading_zeros();
+                let mut x;
+                loop {
+                    x = Self::random(generator) & mask;
+                    if x < width {
+                        break;
+                    }
+                }
+                x as _
+            }
             _ => panic!("Unsupported usize size"),
         }
     }
+}
 
-    fn from_generator_bounded(src: &G, low: Self, high: Self) -> Self {
-        assert!(low < high);
-        match core::mem::size_of::<usize>() {
-            4 => u32::from_generator_bounded(src, low as u32, high as u32) as usize,
-            8 => u64::from_generator_bounded(src, low as u64, high as u64) as usize,
-            16 => u128::from_generator_bounded(src, low as u128, high as u128) as usize,
-            _ => panic!("Unsupported usize size"),
-        }
+macro_rules! impl_int_random {
+    ($($int:ty),+) => {
+        $(
+            impl<G> Random<G> for $int
+            where
+                G: Generator<u64>,
+            {
+                fn random(generator: &G) -> Self {
+                    generator.generate() as _
+                }
+            }
+        )+
+    };
+}
+
+macro_rules! impl_unsigned_random_range {
+    ($($int:ty, $dbl:ty),+) => {
+        $(impl<G> RandomRange<G> for $int
+        where
+            G: Generator<u64>,
+            Self: Random<G>,
+        {
+            fn random_range<R>(generator: &G, range: R) -> Self
+            where
+                R: RangeBounds<Self>,
+            {
+                let low = match range.start_bound() {
+                    Bound::Included(&low) => low,
+                    Bound::Excluded(&low) => low.saturating_add(1),
+                    Bound::Unbounded => 0,
+                };
+
+                assert!(
+                    range.contains(&low),
+                    "cannot generate a value from an empty range"
+                );
+                let width = match range.end_bound() {
+                    Bound::Included(&high) => high - low + 1,
+                    Bound::Excluded(&high) => high - low,
+                    Bound::Unbounded if low > 0 => <$int>::MAX.abs_diff(low + 1),
+                    _ => return Self::random(generator),
+                };
+
+                let mut x = Self::random(generator);
+                let mut m = (x as $dbl) * (width as $dbl);
+                let mut l = m as $int;
+                if l < width {
+                    let mut t = <$int>::MAX - width;
+                    if t >= width {
+                        t -= width;
+                        if t >= width {
+                            t %= width;
+                        }
+                    }
+                    while l < t {
+                        x = Self::random(generator);
+                        m = (x as $dbl) * (width as $dbl);
+                        l = m as $int;
+                    }
+                }
+                (m >> <$int>::BITS) as $int + low
+            }
+        })+
+    };
+}
+
+macro_rules! impl_signed_random_range {
+    ($($int:ty, $uint:ty),+) => {
+        $(
+            impl<G> RandomRange<G> for $int
+            where
+                G: Generator<u64>,
+                Self: Random<G>,
+                $uint: RandomRange<G>,
+            {
+                fn random_range<R>(generator: &G, range: R) -> Self
+                where
+                    R: RangeBounds<Self>,
+                {
+                    let low = match range.start_bound() {
+                        Bound::Included(&low) => low,
+                        Bound::Excluded(&low) => low.saturating_add(1),
+                        Bound::Unbounded => <$int>::MIN,
+                    };
+
+                    assert!(
+                        range.contains(&low),
+                        "cannot generate a value from an empty range"
+                    );
+                    let width: $uint = match range.end_bound() {
+                        Bound::Included(&high) if high.abs_diff(low) < <$uint>::MAX => high.abs_diff(low) + 1,
+                        Bound::Excluded(&high) => high.abs_diff(low),
+                        Bound::Unbounded if low > <$int>::MIN => <$int>::MAX.abs_diff(low) + 1,
+                        _ => return Self::random(generator),
+                    };
+
+                    let x = <$uint>::random_range(generator, 0..width);
+                    low.wrapping_add_unsigned(x)
+                }
+            }
+        )+
     }
 }
 
-impl<G> FromGenerator<G> for isize
-where
-    G: Generator<u64>,
-{
-    fn from_generator(src: &G) -> Self {
-        match core::mem::size_of::<isize>() {
-            4 => src.generate() as _,
-            8 => src.generate() as _,
-            16 => ((src.generate() as u128) << 64 | src.generate() as u128) as _,
-            _ => panic!("Unsupported isize size"),
-        }
-    }
-
-    fn from_generator_bounded(src: &G, low: Self, high: Self) -> Self {
-        assert!(low < high);
-        match core::mem::size_of::<isize>() {
-            4 => i32::from_generator_bounded(src, low as i32, high as i32) as isize,
-            8 => i64::from_generator_bounded(src, low as i64, high as i64) as isize,
-            16 => i128::from_generator_bounded(src, low as i128, high as i128) as isize,
-            _ => panic!("Unsupported isize size"),
-        }
-    }
-}
-
-impl<G, T, const N: usize> FromGenerator<G> for [T; N]
-where
-    T: Copy + FromGenerator<G>,
-{
-    fn from_generator(src: &G) -> Self {
-        std::array::from_fn(|_| T::from_generator(src))
-    }
-
-    fn from_generator_bounded(src: &G, low: Self, high: Self) -> Self {
-        std::array::from_fn(|i| T::from_generator_bounded(src, low[i], high[i]))
-    }
-}
+impl_int_random!(u8, i8, u16, i16, u32, i32, u64, i64);
+impl_unsigned_random_range!(u8, u16, u16, u32, u32, u64, u64, u128);
+impl_signed_random_range!(i8, u8, i16, u16, i32, u32, i64, u64, i128, u128, isize, usize);
