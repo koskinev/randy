@@ -1,10 +1,33 @@
 use std::{
     cell::Cell,
+    collections::HashSet,
     sync::atomic::{AtomicU64, Ordering},
 };
 
 use crate as randy;
-use crate::rng::{wyhash, INCREMENT};
+use crate::rng::{wyhash, Rng, INCREMENT};
+
+#[test]
+fn random_range() {
+    const ITERS: usize = 100_000;
+    let rng = Rng::new();
+
+    let values: HashSet<u8> = (0..ITERS).map(|_| rng.bounded(..=128)).collect();
+    assert_eq!(values.len(), 129);
+    assert!((0..=128).all(|x| values.contains(&x)));
+
+    let values: HashSet<i8> = (0..ITERS).map(|_| rng.bounded(-64..=64)).collect();
+    assert_eq!(values.len(), 129);
+    assert!((-64..=64).all(|x| values.contains(&x)));
+
+    let values: HashSet<i128> = (0..ITERS).map(|_| rng.bounded(-64..=64)).collect();
+    assert_eq!(values.len(), 129);
+    assert!((-64..=64).all(|x| values.contains(&x)));
+
+    let values: HashSet<i128> = (0..ITERS).map(|_| rng.bounded(i128::MAX - 128..)).collect();
+    assert_eq!(values.len(), 129);
+    assert!((i128::MAX - 128..=i128::MAX).all(|x| values.contains(&x)));
+}
 
 #[test]
 fn readme_example() {
