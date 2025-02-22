@@ -47,23 +47,19 @@ const BETA: u128 = 0x1E3DF208C6781EFFF;
 /// A global instance of an `AtomicRng` that can be accessed from multiple threads.
 pub static RNG: LazyLock<AtomicRng> = LazyLock::new(AtomicRng::new);
 
+/// A thread-safe random number generator that uses atomics to update its state.
+/// Suitable for concurrent environments, this RNG can be shared safely across threads
+/// without requiring mutable references.
 #[derive(Debug)]
-/// A random number generator with atomically updated state, suitable for use in concurrent
-/// environments.
-///
-/// The implementation is based on hashing the Weyl sequence with `wyhash`, adapted from
-/// https://github.com/lemire/testingRNG/blob/master/source/wyhash.h.
 pub struct AtomicRng {
     /// The current state of the RNG.
     pub(crate) state: AtomicU64,
 }
 
+/// A random number generator designed for single-threaded contexts.
+/// This type avoids the need for mutable references while delivering performance
+/// comparable to traditional mutable RNGs.
 #[derive(Debug)]
-/// A random number generator that can be used in single-threaded contexts without a mutable
-/// reference.
-///
-/// The implementation is based on hashing the Weyl sequence with `wyhash`, adapted from
-/// https://github.com/lemire/testingRNG/blob/master/source/wyhash.h.
 pub struct Rng {
     /// The current state of the RNG.
     pub(crate) state: Cell<u64>,
@@ -71,7 +67,8 @@ pub struct Rng {
 
 #[allow(dead_code)]
 impl AtomicRng {
-    /// Returns a random value of type `T` in the range `[low, high)`.
+    /// Generates a random value of type `T` within the specified range. For example, `10..20`
+    /// returns a value between 10 (inclusive) and 20 (exclusive).
     ///
     /// # Example
     /// ```
@@ -216,7 +213,8 @@ impl AtomicRng {
 
 #[allow(dead_code)]
 impl Rng {
-    /// Returns a random value of type `T` in the range `[low, high)`.
+    /// Generates a random value of type `T` within the specified range. For example, `10..20`
+    /// returns a value between 10 (inclusive) and 20 (exclusive).
     ///
     /// # Example
     /// ```
