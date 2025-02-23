@@ -111,6 +111,24 @@ fn test_atomic_rng_reseed() {
     assert_eq!(val1, val2, "AtomicRng should produce the same output after reseeding with the same seed");
 }
 
+#[test]
+fn test_atomic_rng_iter() {
+    let atomic_rng = randy::rng::AtomicRng::new();
+    let numbers: Vec<u32> = atomic_rng.iter().take(10).collect();
+    assert_eq!(numbers.len(), 10);
+    // Verify that not all numbers are equal.
+    assert!(numbers.iter().any(|&n| n != numbers[0]), "Iterator should produce varying numbers");
+}
+
+#[test]
+fn test_rng_iter() {
+    let rng = randy::rng::Rng::new();
+    let numbers: Vec<u32> = rng.iter().take(10).collect();
+    assert_eq!(numbers.len(), 10);
+    // Verify that not all numbers are equal.
+    assert!(numbers.iter().any(|&n| n != numbers[0]), "Iterator should produce varying numbers");
+}
+
 #[ignore]
 #[allow(dead_code)]
 fn bench() {

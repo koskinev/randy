@@ -119,6 +119,25 @@ impl AtomicRng {
         }
     }
 
+    /// Creates an iterator that yields an infinite sequence of random values of type T.
+    ///
+    /// The iterator repeatedly calls the `Random` trait implementation for type T
+    /// using this RNG instance.
+    ///
+    /// # Example
+    /// ```
+    /// # use randy::AtomicRng;
+    /// let rng = AtomicRng::new();
+    /// let numbers: Vec<u32> = rng.iter().take(3).collect();
+    /// println!("{numbers:?}");
+    /// ```
+    pub fn iter<T>(&self) -> impl Iterator<Item = T> + '_
+    where
+        T: Random<Self>,
+    {
+        std::iter::from_fn(move || Some(T::random(self)))
+    }
+
     /// Initializes a new RNG. In release builds, the state is seeded with `std::hash::RandomState`.
     /// In debug builds, the state is set to a constant to make tests reproducible.
     ///
@@ -263,6 +282,25 @@ impl Rng {
             let index = usize::random_range(self, 0..data.len());
             Some(&data[index])
         }
+    }
+
+    /// Creates an iterator that yields an infinite sequence of random values of type T.
+    ///
+    /// The iterator repeatedly calls the `Random` trait implementation for type T
+    /// using this RNG instance.
+    ///
+    /// # Example
+    /// ```
+    /// # use randy::Rng;
+    /// let rng = Rng::new();
+    /// let numbers: Vec<u32> = rng.iter().take(3).collect();
+    /// println!("{numbers:?}");
+    /// ```
+    pub fn iter<T>(&self) -> impl Iterator<Item = T> + '_
+    where
+        T: Random<Self>,
+    {
+        std::iter::from_fn(move || Some(T::random(self)))
     }
 
     /// Initializes a new RNG. In release builds, the state is seeded with `std::hash::RandomState`.
