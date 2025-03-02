@@ -397,6 +397,26 @@ impl Rng {
 }
 
 #[inline]
+/// Shuffles the elements of the slice `data` using the Fisher-Yates algorithm.
+///
+/// # Example
+/// ```
+/// # use randy::shuffle;
+/// let mut data = [1, 2, 3, 4, 5];
+/// shuffle(&mut data);
+/// println!("{data:?}");
+/// ```
+///
+/// This function is a convenience wrapper around the `shuffle` method of the `Rng` type.
+/// Each call to `shuffle` creates a new instance of `Rng`, which may be inefficient if you
+/// need to shuffle multiple slices. In such cases, consider initializing an `Rng` instance
+/// and calling its `shuffle` method directly.
+pub fn shuffle<T>(data: &mut [T]) {
+    let rng = Rng::new();
+    rng.shuffle(data);
+}
+
+#[inline]
 pub(crate) fn wyhash(value: u64) -> u64 {
     let mut tmp = (value as u128).wrapping_mul(ALPHA);
     tmp ^= tmp >> 64;

@@ -32,4 +32,4 @@ mod tests;
 
 mod rng;
 
-pub use rng::{AtomicRng, Rng, RNG};
+pub use rng::{shuffle, AtomicRng, Rng, RNG};
