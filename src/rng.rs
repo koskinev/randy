@@ -558,6 +558,62 @@ where
     }
 }
 
+impl<G> RandomRange<G> for f32
+where
+    f32: Random<G>,
+{
+    fn random_range<R>(generator: &G, range: R) -> Self
+    where
+        R: RangeBounds<Self>,
+    {
+        let low = match range.start_bound() {
+            Bound::Included(&low) => low,
+            Bound::Excluded(&low) => low + Self::EPSILON,
+            Bound::Unbounded => Self::MIN,
+        };
+
+        assert!(
+            range.contains(&low),
+            "cannot generate a value from an empty range"
+        );
+        let width = match range.end_bound() {
+            Bound::Included(&high) => high - low + Self::EPSILON,
+            Bound::Excluded(&high) => high - low,
+            Bound::Unbounded => Self::MAX,
+        };
+        let x = <Self as Random<G>>::random(generator);
+        low + width * x
+    }
+}
+
+impl<G> RandomRange<G> for f64
+where
+    f64: Random<G>,
+{
+    fn random_range<R>(generator: &G, range: R) -> Self
+    where
+        R: RangeBounds<Self>,
+    {
+        let low = match range.start_bound() {
+            Bound::Included(&low) => low,
+            Bound::Excluded(&low) => low + Self::EPSILON,
+            Bound::Unbounded => Self::MIN,
+        };
+
+        assert!(
+            range.contains(&low),
+            "cannot generate a value from an empty range"
+        );
+        let width = match range.end_bound() {
+            Bound::Included(&high) => high - low + Self::EPSILON,
+            Bound::Excluded(&high) => high - low,
+            Bound::Unbounded => Self::MAX,
+        };
+        let x = <Self as Random<G>>::random(generator);
+        low + width * x
+    }
+}
+
 impl<G> RandomRange<G> for u128
 where
     G: Generator<u64>,
