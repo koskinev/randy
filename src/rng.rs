@@ -220,6 +220,22 @@ impl AtomicRng {
         }
     }
 
+    /// Splits a new RNG instance from the current one. The new instance will have a different,
+    /// deterministic state based on the current state of the RNG.
+    pub fn split(&self) -> Self {
+        let mut tmp = self.u64();
+        tmp ^= wyhash(tmp.wrapping_add(INCREMENT));
+        Self {
+            state: AtomicU64::new(tmp),
+        }
+    }
+
+    /// Returns the current state of the RNG. This value can be used to restore the RNG state later
+    /// with `reseed`.
+    pub fn state(&self) -> u64 {
+        self.state.load(Ordering::Relaxed)
+    }
+
     /// Returns the next `u64` value from the pseudorandom sequence.
     pub(crate) fn u64(&self) -> u64 {
         // Read the current state and increment it
@@ -383,6 +399,22 @@ impl Rng {
             data.swap(end - 1, other);
             end -= 1;
         }
+    }
+
+    /// Splits a new RNG instance from the current one. The new instance will have a different,
+    /// deterministic state based on the current state of the RNG.
+    pub fn split(&self) -> Self {
+        let mut tmp = self.u64();
+        tmp ^= wyhash(tmp.wrapping_add(INCREMENT));
+        Self {
+            state: Cell::new(tmp),
+        }
+    }
+
+    /// Returns the current state of the RNG. This value can be used to restore the RNG state later
+    /// with `reseed`.
+    pub fn state(&self) -> u64 {
+        self.state.get()
     }
 
     /// Returns the next `u64` value from the pseudorandom sequence.
