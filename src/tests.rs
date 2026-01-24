@@ -12,19 +12,21 @@ fn random_range() {
     const ITERS: usize = 100_000;
     let rng = Rng::new();
 
-    let values: HashSet<u8> = (0..ITERS).map(|_| rng.bounded(..=128)).collect();
+    let values: HashSet<u8> = (0..ITERS).map(|_| rng.bounded(&(..=128))).collect();
     assert_eq!(values.len(), 129);
     assert!((0..=128).all(|x| values.contains(&x)));
 
-    let values: HashSet<i8> = (0..ITERS).map(|_| rng.bounded(-64..=64)).collect();
+    let values: HashSet<i8> = (0..ITERS).map(|_| rng.bounded(&(-64..=64))).collect();
     assert_eq!(values.len(), 129);
     assert!((-64..=64).all(|x| values.contains(&x)));
 
-    let values: HashSet<i128> = (0..ITERS).map(|_| rng.bounded(-64..=64)).collect();
+    let values: HashSet<i128> = (0..ITERS).map(|_| rng.bounded(&(-64..=64))).collect();
     assert_eq!(values.len(), 129);
     assert!((-64..=64).all(|x| values.contains(&x)));
 
-    let values: HashSet<i128> = (0..ITERS).map(|_| rng.bounded(i128::MAX - 128..)).collect();
+    let values: HashSet<i128> = (0..ITERS)
+        .map(|_| rng.bounded(&(i128::MAX - 128..)))
+        .collect();
     assert_eq!(values.len(), 129);
     assert!((i128::MAX - 128..=i128::MAX).all(|x| values.contains(&x)));
 }
@@ -77,7 +79,7 @@ fn test_atomic_rng_random_numbers() {
 fn test_rng_bounded_range() {
     let rng = randy::rng::Rng::new();
     for _ in 0..1000 {
-        let x: u32 = rng.bounded(50..60);
+        let x: u32 = rng.bounded(&(50..60));
         assert!(
             (50..60).contains(&x),
             "Rng::bounded() value should be within [50, 60)"
@@ -89,7 +91,7 @@ fn test_rng_bounded_range() {
 fn test_atomic_rng_bounded_range() {
     let atomic_rng = randy::rng::AtomicRng::new();
     for _ in 0..1000 {
-        let x: u32 = atomic_rng.bounded(100..110);
+        let x: u32 = atomic_rng.bounded(&(100..110));
         assert!(
             (100..110).contains(&x),
             "AtomicRng::bounded() value should be within [100, 110)"
@@ -111,14 +113,14 @@ fn test_floating_point_bounded_ranges() {
         let upper = lower + width;
 
         // Test exclusive range
-        let x: f32 = rng.bounded(lower..upper);
+        let x: f32 = rng.bounded(&(lower..upper));
         assert!(
             x >= lower && x < upper,
             "f32 bounded value should be within [{lower}, {upper}), got {x}"
         );
 
         // Test inclusive range
-        let y: f32 = rng.bounded(lower..=upper);
+        let y: f32 = rng.bounded(&(lower..=upper));
         assert!(
             y >= lower && y <= upper,
             "f32 bounded value should be within [{lower}, {upper}], got {y}"
@@ -133,14 +135,14 @@ fn test_floating_point_bounded_ranges() {
         let upper = lower + width;
 
         // Test exclusive range
-        let x: f64 = rng.bounded(lower..upper);
+        let x: f64 = rng.bounded(&(lower..upper));
         assert!(
             x >= lower && x < upper,
             "f64 bounded value should be within [{lower}, {upper}), got {x}"
         );
 
         // Test inclusive range
-        let y: f64 = rng.bounded(lower..=upper);
+        let y: f64 = rng.bounded(&(lower..=upper));
         assert!(
             y >= lower && y <= upper,
             "f64 bounded value should be within [{lower}, {upper}], got {y}"
@@ -157,14 +159,14 @@ fn test_floating_point_bounded_ranges() {
         let upper = lower + width;
 
         // Test exclusive range
-        let x: f32 = atomic_rng.bounded(lower..upper);
+        let x: f32 = atomic_rng.bounded(&(lower..upper));
         assert!(
             x >= lower && x < upper,
             "f32 bounded value should be within [{lower}, {upper}), got {x}"
         );
 
         // Test inclusive range
-        let y: f32 = atomic_rng.bounded(lower..=upper);
+        let y: f32 = atomic_rng.bounded(&(lower..=upper));
         assert!(
             y >= lower && y <= upper,
             "f32 bounded value should be within [{lower}, {upper}], got {y}"
@@ -179,14 +181,14 @@ fn test_floating_point_bounded_ranges() {
         let upper = lower + width;
 
         // Test exclusive range
-        let x: f64 = atomic_rng.bounded(lower..upper);
+        let x: f64 = atomic_rng.bounded(&(lower..upper));
         assert!(
             x >= lower && x < upper,
             "f64 bounded value should be within [{lower}, {upper}), got {x}"
         );
 
         // Test inclusive range
-        let y: f64 = atomic_rng.bounded(lower..=upper);
+        let y: f64 = atomic_rng.bounded(&(lower..=upper));
         assert!(
             y >= lower && y <= upper,
             "f64 bounded value should be within [{lower}, {upper}], got {y}"
@@ -242,6 +244,58 @@ fn test_rng_iter() {
         numbers.iter().any(|&n| n != numbers[0]),
         "Iterator should produce varying numbers"
     );
+}
+
+#[test]
+fn test_rng_distinct_bounded() {
+    let rng = randy::rng::Rng::new();
+    let values: [u8; 16] = rng.distinct_bounded(&(0..64));
+    assert!(values.iter().all(|&v| (0..64).contains(&v)));
+    for i in 0..values.len() {
+        for j in (i + 1)..values.len() {
+            assert_ne!(values[i], values[j]);
+        }
+    }
+}
+
+#[test]
+fn test_atomic_rng_distinct_bounded() {
+    let rng = randy::rng::AtomicRng::new();
+    let values: [u8; 16] = rng.distinct_bounded(&(0..64));
+    assert!(values.iter().all(|&v| (0..64).contains(&v)));
+    for i in 0..values.len() {
+        for j in (i + 1)..values.len() {
+            assert_ne!(values[i], values[j]);
+        }
+    }
+}
+
+#[test]
+fn test_rng_choose_softmax() {
+    let rng = randy::rng::Rng::new();
+    let data = ["a", "bb", "ccc", "dddd"];
+
+    // When temperature <= 0, should return the max element by f.
+    let picked = rng.choose_softmax(&data, |s| s.len() as f64, 0.0).unwrap();
+    assert_eq!(picked, &"dddd");
+
+    // With positive temperature, should return some element.
+    let picked = rng.choose_softmax(&data, |s| s.len() as f64, 1.0);
+    assert!(picked.is_some());
+}
+
+#[test]
+fn test_atomic_rng_choose_softmax() {
+    let rng = randy::rng::AtomicRng::new();
+    let data = ["a", "bb", "ccc", "dddd"];
+
+    // When temperature <= 0, should return the max element by f.
+    let picked = rng.choose_softmax(&data, |s| s.len() as f64, -1.0).unwrap();
+    assert_eq!(picked, &"dddd");
+
+    // With positive temperature, should return some element.
+    let picked = rng.choose_softmax(&data, |s| s.len() as f64, 1.0);
+    assert!(picked.is_some());
 }
 
 #[ignore]

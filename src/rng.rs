@@ -74,10 +74,10 @@ impl AtomicRng {
     /// ```
     /// # use randy::AtomicRng;
     /// let rng = AtomicRng::new();
-    /// let value: u32 = rng.bounded(10..20);
+    /// let value: u32 = rng.bounded(&(10..20));
     /// assert!(value >= 10 && value < 20);
     /// ```
-    pub fn bounded<T, R>(&self, range: R) -> T
+    pub fn bounded<T, R>(&self, range: &R) -> T
     where
         T: RandomRange<Self>,
         R: RangeBounds<T>,
@@ -114,9 +114,124 @@ impl AtomicRng {
         if data.is_empty() {
             None
         } else {
-            let index = usize::random_range(self, 0..data.len());
+            let index = usize::random_range(self, &(0..data.len()));
             Some(&data[index])
         }
+    }
+
+    /// Selects an element from `data` according to the softmax distribution induced by `f` and
+    /// temperature `t`. Ignores non-finite values returned by `f`. Values returned from `f` are
+    /// cached to improve performance when `f` is expensive to compute.
+    ///
+    /// Edge cases:
+    /// - If the slice is empty, or if all values returned by `f` are non-finite, returns `None`
+    /// - If the temperature is less or equal to zero, infinite or `NaN`, returns the maximum
+    ///   element by `f`.
+    ///
+    /// This implementation computes the "safe" softmax by subtracting the maximum value from all
+    /// elements before exponentiating, which helps prevent overflow.
+    ///
+    /// # Example
+    /// ```
+    /// # use randy::AtomicRng;
+    /// let rng = AtomicRng::new();
+    /// let data = ["a", "b", "c"];
+    /// let picked = rng.choose_softmax(&data, |s| s.len() as f64, 1.0);
+    /// assert!(picked.is_some());
+    /// ```
+    pub fn choose_softmax<'a, T, F>(&self, data: &'a [T], mut f: F, t: f64) -> Option<&'a T>
+    where
+        F: FnMut(&T) -> f64,
+        usize: Random<Self>,
+    {
+        if data.is_empty() {
+            return None;
+        }
+
+        // Evaluate keys once to avoid inconsistent or expensive re-computation.
+        let mut values = Vec::with_capacity(data.len());
+
+        // Find the maximum finite value for numerical stability and track the index.
+        let (mut index, mut max) = (0, f64::NEG_INFINITY);
+        let mut any_finite = false;
+        for (i, elem) in data.iter().enumerate() {
+            let v = f(elem);
+            if v.is_finite() {
+                any_finite = true;
+                values.push(v);
+                if v > max {
+                    (index, max) = (i, v);
+                }
+            }
+        }
+
+        // Edge cases:
+        // - No finite values: return the first index (the above code ensures `index == 0`).
+        // - Non-positive or non-finite temperature: return the index of the maximum element.
+        if !any_finite || t <= 0.0 || !t.is_finite() {
+            return data.get(index);
+        }
+
+        // Compute the normalization constant, skipping non-finite inputs.
+        let mut sum = 0.0f64;
+        for v in values.iter_mut() {
+            if v.is_finite() {
+                *v = ((*v - max) / t).exp();
+                sum += *v;
+            }
+        }
+        if sum <= 0.0 || !sum.is_finite() {
+            return None;
+        }
+
+        // Draw from the distribution using a single pass.
+        let mut threshold = f64::random(self) * sum;
+        for (index, &weight) in values.iter().enumerate() {
+            if weight.is_finite() {
+                threshold -= weight;
+                if threshold <= 0.0 {
+                    return data.get(index);
+                }
+            }
+        }
+        data.get(index)
+    }
+
+    /// Generates an array of `N` distinct random values of type `T` within the specified range.
+    ///
+    /// This method uses rejection sampling: it fills the array with random values from the
+    /// range and re-rolls any value that collides with a previously generated value.
+    ///
+    /// # Warning
+    ///
+    /// This method will loop indefinitely if the provided range contains fewer than `N` distinct
+    /// values.
+    ///
+    /// # Example
+    /// ```
+    /// # use randy::AtomicRng;
+    /// let rng = AtomicRng::new();
+    /// let values: [u8; 4] = rng.distinct_bounded(&(0..10));
+    /// assert_eq!(values.len(), 4);
+    /// assert!(values.iter().all(|&v| (0..10).contains(&v)));
+    /// for i in 0..values.len() {
+    ///     for j in (i + 1)..values.len() {
+    ///         assert_ne!(values[i], values[j]);
+    ///     }
+    /// }
+    /// ```
+    pub fn distinct_bounded<T, R, const N: usize>(&self, range: &R) -> [T; N]
+    where
+        T: RandomRange<Self> + Copy + PartialEq,
+        R: RangeBounds<T>,
+    {
+        let mut arr: [T; N] = core::array::from_fn(|_| T::random_range(self, range));
+        for index in 0..N {
+            while arr[..index].contains(&arr[index]) {
+                arr[index] = T::random_range(self, range);
+            }
+        }
+        arr
     }
 
     /// Creates an iterator that yields an infinite sequence of random values of type T.
@@ -214,7 +329,7 @@ impl AtomicRng {
     {
         let mut end = data.len();
         while end > 1 {
-            let other = usize::random_range(self, 0..end);
+            let other = usize::random_range(self, &(0..end));
             data.swap(end - 1, other);
             end -= 1;
         }
@@ -255,10 +370,10 @@ impl Rng {
     /// ```
     /// # use randy::Rng;
     /// let rng = Rng::new();
-    /// let value: u32 = rng.bounded(10..20);
+    /// let value: u32 = rng.bounded(&(10..20));
     /// assert!(value >= 10 && value < 20);
     /// ```
-    pub fn bounded<T, R>(&self, range: R) -> T
+    pub fn bounded<T, R>(&self, range: &R) -> T
     where
         T: RandomRange<Self>,
         R: RangeBounds<T>,
@@ -295,9 +410,124 @@ impl Rng {
         if data.is_empty() {
             None
         } else {
-            let index = usize::random_range(self, 0..data.len());
+            let index = usize::random_range(self, &(0..data.len()));
             Some(&data[index])
         }
+    }
+
+    /// Selects an element from `data` according to the softmax distribution induced by `f` and
+    /// temperature `t`. Ignores non-finite values returned by `f`. Values returned from `f` are
+    /// cached to improve performance when `f` is expensive to compute.
+    ///
+    /// Edge cases:
+    /// - If the slice is empty, or if all values returned by `f` are non-finite, returns `None`
+    /// - If the temperature is less or equal to zero, infinite or `NaN`, returns the maximum
+    ///   element by `f`.
+    ///
+    /// This implementation computes the "safe" softmax by subtracting the maximum value from all
+    /// elements before exponentiating, which helps prevent overflow.
+    ///
+    /// # Example
+    /// ```
+    /// # use randy::Rng;
+    /// let rng = Rng::new();
+    /// let data = ["a", "bb", "ccc"];
+    /// let picked = rng.choose_softmax(&data, |s| s.len() as f64, 0.5);
+    /// assert!(picked.is_some());
+    /// ```
+    pub fn choose_softmax<'a, T, F>(&self, data: &'a [T], mut f: F, t: f64) -> Option<&'a T>
+    where
+        F: FnMut(&T) -> f64,
+        usize: Random<Self>,
+    {
+        if data.is_empty() {
+            return None;
+        }
+
+        // Evaluate keys once to avoid inconsistent or expensive re-computation.
+        let mut values = Vec::with_capacity(data.len());
+
+        // Find the maximum finite value for numerical stability and track the index.
+        let (mut index, mut max) = (0, f64::NEG_INFINITY);
+        let mut any_finite = false;
+        for (i, elem) in data.iter().enumerate() {
+            let v = f(elem);
+            if v.is_finite() {
+                any_finite = true;
+                values.push(v);
+                if v > max {
+                    (index, max) = (i, v);
+                }
+            }
+        }
+
+        // Edge cases:
+        // - No finite values: return the first index (the above code ensures `index == 0`).
+        // - Non-positive or non-finite temperature: return the index of the maximum element.
+        if !any_finite || t <= 0.0 || !t.is_finite() {
+            return data.get(index);
+        }
+
+        // Compute the normalization constant, skipping non-finite inputs.
+        let mut sum = 0.0f64;
+        for v in values.iter_mut() {
+            if v.is_finite() {
+                *v = ((*v - max) / t).exp();
+                sum += *v;
+            }
+        }
+        if sum <= 0.0 || !sum.is_finite() {
+            return None;
+        }
+
+        // Draw from the distribution using a single pass.
+        let mut threshold = f64::random(self) * sum;
+        for (index, &weight) in values.iter().enumerate() {
+            if weight.is_finite() {
+                threshold -= weight;
+                if threshold <= 0.0 {
+                    return data.get(index);
+                }
+            }
+        }
+        data.get(index)
+    }
+
+    /// Generates an array of `N` distinct random values of type `T` within the specified range.
+    ///
+    /// This method uses rejection sampling: it fills the array with random values from the
+    /// range and re-rolls any value that collides with a previously generated value.
+    ///
+    /// # Warning
+    ///
+    /// This method will loop indefinitely if the provided range contains fewer than `N` distinct
+    /// values.
+    ///
+    /// # Example
+    /// ```
+    /// # use randy::Rng;
+    /// let rng = Rng::new();
+    /// let values: [u8; 4] = rng.distinct_bounded(&(0..10));
+    /// assert_eq!(values.len(), 4);
+    /// assert!(values.iter().all(|&v| (0..10).contains(&v)));
+    /// for i in 0..values.len() {
+    ///     for j in (i + 1)..values.len() {
+    ///         assert_ne!(values[i], values[j]);
+    ///     }
+    /// }
+    /// ```
+    pub fn distinct_bounded<T, R, const N: usize>(&self, range: &R) -> [T; N]
+    where
+        T: RandomRange<Self> + Copy + PartialEq,
+        R: RangeBounds<T>,
+    {
+        let mut arr: [T; N] = core::array::from_fn(|_| T::random_range(self, range));
+        for index in 0..N {
+            while arr[..index].contains(&arr[index]) {
+                arr[index] = T::random_range(self, range);
+            }
+        }
+        arr
     }
 
     /// Creates an iterator that yields an infinite sequence of random values of type T.
@@ -395,7 +625,7 @@ impl Rng {
     {
         let mut end = data.len();
         while end > 1 {
-            let other = usize::random_range(self, 0..end);
+            let other = usize::random_range(self, &(0..end));
             data.swap(end - 1, other);
             end -= 1;
         }
@@ -493,7 +723,7 @@ pub trait Random<G> {
 }
 
 pub trait RandomRange<G> {
-    fn random_range<R>(generator: &G, range: R) -> Self
+    fn random_range<R>(generator: &G, range: &R) -> Self
     where
         R: RangeBounds<Self>;
 }
@@ -614,7 +844,7 @@ impl<G> RandomRange<G> for f32
 where
     f32: Random<G>,
 {
-    fn random_range<R>(generator: &G, range: R) -> Self
+    fn random_range<R>(generator: &G, range: &R) -> Self
     where
         R: RangeBounds<Self>,
     {
@@ -642,7 +872,7 @@ impl<G> RandomRange<G> for f64
 where
     f64: Random<G>,
 {
-    fn random_range<R>(generator: &G, range: R) -> Self
+    fn random_range<R>(generator: &G, range: &R) -> Self
     where
         R: RangeBounds<Self>,
     {
@@ -670,7 +900,7 @@ impl<G> RandomRange<G> for u128
 where
     G: Generator<u64>,
 {
-    fn random_range<R>(generator: &G, range: R) -> Self
+    fn random_range<R>(generator: &G, range: &R) -> Self
     where
         R: RangeBounds<Self>,
     {
@@ -708,7 +938,7 @@ impl<G> RandomRange<G> for usize
 where
     G: Generator<u64>,
 {
-    fn random_range<R>(generator: &G, range: R) -> Self
+    fn random_range<R>(generator: &G, range: &R) -> Self
     where
         R: RangeBounds<Self>,
     {
@@ -809,7 +1039,7 @@ macro_rules! impl_unsigned_random_range {
             G: Generator<u64>,
             Self: Random<G>,
         {
-            fn random_range<R>(generator: &G, range: R) -> Self
+            fn random_range<R>(generator: &G, range: &R) -> Self
             where
                 R: RangeBounds<Self>,
             {
@@ -862,7 +1092,7 @@ macro_rules! impl_signed_random_range {
                 Self: Random<G>,
                 $uint: RandomRange<G>,
             {
-                fn random_range<R>(generator: &G, range: R) -> Self
+                fn random_range<R>(generator: &G, range: &R) -> Self
                 where
                     R: RangeBounds<Self>,
                 {
@@ -883,7 +1113,7 @@ macro_rules! impl_signed_random_range {
                         _ => return Self::random(generator),
                     };
 
-                    let x = <$uint>::random_range(generator, 0..width);
+                    let x = <$uint>::random_range(generator, &(0..width));
                     low.wrapping_add_unsigned(x)
                 }
             }
