@@ -1,16 +1,16 @@
 # RNGs that don't require mutable access
 
-Since RNGs require mutable state, and Rust enforces exclusive access to mutate data, generating random data in Rust typically requires a mutable reference to an RNG. This can be inconvenient in tests because you might need to initialize several RNGs and pass them around as arguments.
+Since RNGs rely on mutable state, and Rust enforces exclusive access for mutation, generating random data typically requires a mutable reference to an RNG. This can be cumbersome in tests or concurrent code where passing mutable references around is difficult.
 
-This project provides two simple PRNGs that only require immutable access to use. The `AtomicRng` type uses atomics to update its state, and can be shared across threads. The `Rng` type stores its state in a `Cell`, and can be used in single-threaded contexts.
+This project provides two simple PRNGs that only require immutable access. The `AtomicRng` type uses atomics to update its state and can be shared across threads. The `CellRng` type stores its state in a `Cell` and is designed for single-threaded contexts. The generic `Rng` wrapper serves as the underlying implementation for both.
 
 ```rust
-use randy::{AtomicRng, RNG}; // The atomic RNG type and the static RNG
+use randy::AtomicRng; // The atomic RNG type
 use std::thread;
 
-// A function that takes a reference to the RNG
+// A function that takes an immutable reference to the RNG
 //
-//   look mom, not &mut 👇!
+//   look mom, no &mut 👇!
 fn find_answer(thoughts: &AtomicRng) {
     match thoughts.random() {
         42 => println!("Got 42! The answer!"),
@@ -18,27 +18,46 @@ fn find_answer(thoughts: &AtomicRng) {
     }
 }
 
-// A function that uses the global RNG across threads
+// A function that shares an RNG across threads
 fn think() {
+    let rng = AtomicRng::new();
     thread::scope(|s| {
         (0..4).for_each(|_| {
-            s.spawn(|| find_answer(&RNG));
+            s.spawn(|| find_answer(&rng));
         });
     });
 }
 think();
 ```
 
-The library provides methods to generate random numbers of different types, both with and without bounds, as well as for shuffling and sampling from slices. You can also enable the `rand` feature to use the `RngCore` and `SeedableRng` traits from the `rand` crate.
+The library provides methods to generate random numbers of various types (both bounded and unbounded), as well as utilities for shuffling and sampling from slices.
+
+## RNG types
+
+- `AtomicRng`: Thread-safe and shareable, but slower due to atomic operations.
+- `CellRng`: Single-threaded and faster; recommended for most non-concurrent use cases.
+
+## Seeding and reproducibility
+
+In release builds, RNGs are seeded using `std::hash::RandomState`. In debug builds, they use a fixed seed to ensure tests are reproducible. To guarantee deterministic behavior across all builds, call `reseed`:
+
+```rust
+use randy::CellRng;
+
+let rng = CellRng::new();
+rng.reseed(1234);
+let x: u32 = rng.random();
+println!("{x}");
+```
 
 ## Implementation
 
-The RNGs are based on iterating the state over the [Weyl sequence](https://en.wikipedia.org/wiki/Weyl_sequence) $x_i = x_{i-1} + c \mod 2^{64}$, and hashing the previous state with [wyhash](https://github.com/wangyi-fudan/wyhash). The `AtomicRng` stores its state in an [`AtomicU64`](https://doc.rust-lang.org/std/sync/atomic/struct.AtomicU64.html), and updates it with a single `fetch_add` operation:
+The RNGs are based on iterating state via a [Weyl sequence](https://en.wikipedia.org/wiki/Weyl_sequence) ($x_i = x_{i-1} + c \mod 2^{64}$) and hashing the previous state with [wyhash](https://github.com/wangyi-fudan/wyhash). Use of the Weyl sequence ensures that the period of the generator is $2^{64}$. The `AtomicRng` stores its state in an [`AtomicU64`](https://doc.rust-lang.org/std/sync/atomic/struct.AtomicU64.html) and updates it with a single `fetch_add` operation:
 
 ```rust
 /// Returns the next `u64` value from the pseudorandom sequence.
 fn u64(&self) -> u64 {
-    // Read the current state and increment it
+    // Read the current state and increment it atomically
     let old_state = self.state.fetch_add(Self::INCREMENT, Ordering::Relaxed);
 
     // Hash the old state to produce the next value
@@ -46,7 +65,7 @@ fn u64(&self) -> u64 {
 }
 ```
 
-The non-atomic `Rng` type stores its state in a `Cell<u64>`, and updates it with the following code:
+The non-atomic `CellRng` type stores its state in a `Cell<u64>` and updates it similarly:
 
 ```rust
 fn u64(&self) -> u64 {
@@ -58,8 +77,8 @@ fn u64(&self) -> u64 {
 
 ## Quality
 
-The RNG is not cryptographically secure, but it passes [PractRand](http://pracrand.sourceforge.net/) pre0.95 at least up to 256 GB of generated data. To run the tests, you need to compile the `RNG_test` binary from PractRand source, place it at the root of this project, and execute `run_practrand.sh`. See this [post](https://www.pcg-random.org/posts/how-to-test-with-practrand.html) by Melissa O'Neill for instructions on how to compile PractRand.  
+This RNG is not cryptographically secure. However, it passes [PractRand](http://pracrand.sourceforge.net/) pre0.95 to at least 256 GB of generated data. To run the tests, compile the `RNG_test` binary from the PractRand source, place it in the project root, and execute `run_practrand.sh`. See this [post](https://www.pcg-random.org/posts/how-to-test-with-practrand.html) by Melissa O'Neill for instructions on compiling PractRand.
 
 ## Performance
 
-The non-atomic Rng is almost exactly as fast as a variant that requires mutable access. However, there is a speed penalty for using atomics. On my machine, the throughput of the `Rng` type is about 7.8 GB/s, while the throughput of the `AtomicRng` type is about 3.6 GB/s. Run `cargo test bench --release -- --nocapture` to see what the performance is on your machine.
+The non-atomic `CellRng` performs comparably to variants that require mutable access. However, the `AtomicRng` incurs a performance penalty due to atomic operations. On the author's machine, `CellRng` achieves a throughput of approximately 7.8 GB/s, while `AtomicRng` reaches about 3.6 GB/s. Run `cargo test bench --release -- --nocapture` to benchmark performance on your own system.

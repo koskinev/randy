@@ -5,12 +5,12 @@ use std::{
 };
 
 use crate as randy;
-use crate::rng::{wyhash, Rng, INCREMENT};
+use crate::rng::{wyhash, CellRng, INCREMENT};
 
 #[test]
 fn random_range() {
     const ITERS: usize = 100_000;
-    let rng = Rng::new();
+    let rng = CellRng::new();
 
     let values: HashSet<u8> = (0..ITERS).map(|_| rng.bounded(&(..=128))).collect();
     assert_eq!(values.len(), 129);
@@ -33,7 +33,7 @@ fn random_range() {
 
 #[test]
 fn readme_example() {
-    use randy::{AtomicRng, RNG}; // The atomic RNG type and the static RNG
+    use randy::AtomicRng; // The atomic RNG type
     use std::thread;
 
     // A function that takes a reference to the RNG
@@ -46,11 +46,12 @@ fn readme_example() {
         }
     }
 
-    // A function that uses the global RNG across threads
+    // A function that shares an RNG across threads
     fn think() {
+        let rng = AtomicRng::new();
         thread::scope(|s| {
             (0..4).for_each(|_| {
-                s.spawn(|| find_answer(&RNG));
+                s.spawn(|| find_answer(&rng));
             });
         });
     }
@@ -59,7 +60,7 @@ fn readme_example() {
 
 #[test]
 fn test_rng_random_numbers() {
-    let rng = randy::rng::Rng::new();
+    let rng = randy::rng::CellRng::new();
     let a: u32 = rng.random();
     let b: u32 = rng.random();
     // Verify that successive calls generate different numbers.
@@ -77,7 +78,7 @@ fn test_atomic_rng_random_numbers() {
 
 #[test]
 fn test_rng_bounded_range() {
-    let rng = randy::rng::Rng::new();
+    let rng = randy::rng::CellRng::new();
     for _ in 0..1000 {
         let x: u32 = rng.bounded(&(50..60));
         assert!(
@@ -104,7 +105,7 @@ fn test_floating_point_bounded_ranges() {
     const ITERS: usize = 1000;
 
     // Test f32 with Rng
-    let rng = randy::rng::Rng::new();
+    let rng = randy::rng::CellRng::new();
 
     for _ in 0..ITERS {
         // Generate random bounds
@@ -198,7 +199,7 @@ fn test_floating_point_bounded_ranges() {
 
 #[test]
 fn test_rng_reseed() {
-    let rng = randy::rng::Rng::new();
+    let rng = randy::rng::CellRng::new();
     rng.reseed(42);
     let val1: u32 = rng.random();
     rng.reseed(42);
@@ -236,7 +237,7 @@ fn test_atomic_rng_iter() {
 
 #[test]
 fn test_rng_iter() {
-    let rng = randy::rng::Rng::new();
+    let rng = randy::rng::CellRng::new();
     let numbers: Vec<u32> = rng.iter().take(10).collect();
     assert_eq!(numbers.len(), 10);
     // Verify that not all numbers are equal.
@@ -248,7 +249,7 @@ fn test_rng_iter() {
 
 #[test]
 fn test_rng_distinct_bounded() {
-    let rng = randy::rng::Rng::new();
+    let rng = randy::rng::CellRng::new();
     let values: [u8; 16] = rng.distinct_bounded(&(0..64));
     assert!(values.iter().all(|&v| (0..64).contains(&v)));
     for i in 0..values.len() {
@@ -272,7 +273,7 @@ fn test_atomic_rng_distinct_bounded() {
 
 #[test]
 fn test_rng_choose_softmax() {
-    let rng = randy::rng::Rng::new();
+    let rng = randy::rng::CellRng::new();
     let data = ["a", "bb", "ccc", "dddd"];
 
     // When temperature <= 0, should return the max element by f.
