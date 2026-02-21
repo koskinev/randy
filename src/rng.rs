@@ -92,10 +92,10 @@ impl<C: Core> Rng<C> {
     /// ```
     /// # use randy::CellRng;
     /// let rng = CellRng::new();
-    /// let value: u32 = rng.bounded(&(10..20));
+    /// let value: u32 = rng.bounded(10..20);
     /// assert!(value >= 10 && value < 20);
     /// ```
-    pub fn bounded<T, R>(&self, range: &R) -> T
+    pub fn bounded<T, R>(&self, range: R) -> T
     where
         T: RandomRange<Self>,
         R: RangeBounds<T>,
@@ -132,7 +132,7 @@ impl<C: Core> Rng<C> {
         if data.is_empty() {
             None
         } else {
-            let index = usize::random_range(self, &(0..data.len()));
+            let index = usize::random_range(self, 0..data.len());
             Some(&data[index])
         }
     }
@@ -229,7 +229,7 @@ impl<C: Core> Rng<C> {
     /// ```
     /// # use randy::CellRng;
     /// let rng = CellRng::new();
-    /// let values: [u8; 4] = rng.distinct_bounded(&(0..10));
+    /// let values: [u8; 4] = rng.distinct_bounded(0..10);
     /// assert_eq!(values.len(), 4);
     /// assert!(values.iter().all(|&v| (0..10).contains(&v)));
     /// for i in 0..values.len() {
@@ -238,15 +238,15 @@ impl<C: Core> Rng<C> {
     ///     }
     /// }
     /// ```
-    pub fn distinct_bounded<T, R, const N: usize>(&self, range: &R) -> [T; N]
+    pub fn distinct_bounded<T, R, const N: usize>(&self, range: R) -> [T; N]
     where
         T: RandomRange<Self> + Copy + PartialEq,
-        R: RangeBounds<T>,
+        R: RangeBounds<T> + Clone,
     {
-        let mut arr: [T; N] = core::array::from_fn(|_| T::random_range(self, range));
+        let mut arr: [T; N] = core::array::from_fn(|_| T::random_range(self, range.clone()));
         for index in 0..N {
             while arr[..index].contains(&arr[index]) {
-                arr[index] = T::random_range(self, range);
+                arr[index] = T::random_range(self, range.clone());
             }
         }
         arr
@@ -339,7 +339,7 @@ impl<C: Core> Rng<C> {
     {
         let mut end = data.len();
         while end > 1 {
-            let other = usize::random_range(self, &(0..end));
+            let other = usize::random_range(self, 0..end);
             data.swap(end - 1, other);
             end -= 1;
         }
@@ -459,7 +459,7 @@ pub trait Random<G> {
 }
 
 pub trait RandomRange<G> {
-    fn random_range<R>(generator: &G, range: &R) -> Self
+    fn random_range<R>(generator: &G, range: R) -> Self
     where
         R: RangeBounds<Self>;
 }
@@ -580,7 +580,7 @@ impl<G> RandomRange<G> for f32
 where
     f32: Random<G>,
 {
-    fn random_range<R>(generator: &G, range: &R) -> Self
+    fn random_range<R>(generator: &G, range: R) -> Self
     where
         R: RangeBounds<Self>,
     {
@@ -608,7 +608,7 @@ impl<G> RandomRange<G> for f64
 where
     f64: Random<G>,
 {
-    fn random_range<R>(generator: &G, range: &R) -> Self
+    fn random_range<R>(generator: &G, range: R) -> Self
     where
         R: RangeBounds<Self>,
     {
@@ -636,7 +636,7 @@ impl<G> RandomRange<G> for u128
 where
     G: Generator<u64>,
 {
-    fn random_range<R>(generator: &G, range: &R) -> Self
+    fn random_range<R>(generator: &G, range: R) -> Self
     where
         R: RangeBounds<Self>,
     {
@@ -674,7 +674,7 @@ impl<G> RandomRange<G> for usize
 where
     G: Generator<u64>,
 {
-    fn random_range<R>(generator: &G, range: &R) -> Self
+    fn random_range<R>(generator: &G, range: R) -> Self
     where
         R: RangeBounds<Self>,
     {
@@ -775,7 +775,7 @@ macro_rules! impl_unsigned_random_range {
             G: Generator<u64>,
             Self: Random<G>,
         {
-            fn random_range<R>(generator: &G, range: &R) -> Self
+            fn random_range<R>(generator: &G, range: R) -> Self
             where
                 R: RangeBounds<Self>,
             {
@@ -828,7 +828,7 @@ macro_rules! impl_signed_random_range {
                 Self: Random<G>,
                 $uint: RandomRange<G>,
             {
-                fn random_range<R>(generator: &G, range: &R) -> Self
+                fn random_range<R>(generator: &G, range: R) -> Self
                 where
                     R: RangeBounds<Self>,
                 {
@@ -849,7 +849,7 @@ macro_rules! impl_signed_random_range {
                         _ => return Self::random(generator),
                     };
 
-                    let x = <$uint>::random_range(generator, &(0..width));
+                    let x = <$uint>::random_range(generator, 0..width);
                     low.wrapping_add_unsigned(x)
                 }
             }
