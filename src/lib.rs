@@ -44,4 +44,4 @@ mod tests;
 
 mod rng;
 
-pub use rng::{shuffle, AtomicRng, CellRng, Rng, Core};
+pub use rng::{shuffle, AtomicRng, CellRng, Core, Rng, ShuffleIter};

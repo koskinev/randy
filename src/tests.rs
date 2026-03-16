@@ -24,9 +24,7 @@ fn random_range() {
     assert_eq!(values.len(), 129);
     assert!((-64..=64).all(|x| values.contains(&x)));
 
-    let values: HashSet<i128> = (0..ITERS)
-        .map(|_| rng.bounded(i128::MAX - 128..))
-        .collect();
+    let values: HashSet<i128> = (0..ITERS).map(|_| rng.bounded(i128::MAX - 128..)).collect();
     assert_eq!(values.len(), 129);
     assert!((i128::MAX - 128..=i128::MAX).all(|x| values.contains(&x)));
 }
@@ -59,7 +57,7 @@ fn readme_example() {
 }
 
 #[test]
-fn test_rng_random_numbers() {
+fn rng_random_numbers() {
     let rng = randy::rng::CellRng::new();
     let a: u32 = rng.random();
     let b: u32 = rng.random();
@@ -68,7 +66,7 @@ fn test_rng_random_numbers() {
 }
 
 #[test]
-fn test_atomic_rng_random_numbers() {
+fn atomic_rng_random_numbers() {
     let atomic_rng = randy::rng::AtomicRng::new();
     let a: u32 = atomic_rng.random();
     let b: u32 = atomic_rng.random();
@@ -77,7 +75,7 @@ fn test_atomic_rng_random_numbers() {
 }
 
 #[test]
-fn test_rng_bounded_range() {
+fn rng_bounded_range() {
     let rng = randy::rng::CellRng::new();
     for _ in 0..1000 {
         let x: u32 = rng.bounded(50..60);
@@ -89,7 +87,7 @@ fn test_rng_bounded_range() {
 }
 
 #[test]
-fn test_atomic_rng_bounded_range() {
+fn atomic_rng_bounded_range() {
     let atomic_rng = randy::rng::AtomicRng::new();
     for _ in 0..1000 {
         let x: u32 = atomic_rng.bounded(100..110);
@@ -101,7 +99,7 @@ fn test_atomic_rng_bounded_range() {
 }
 
 #[test]
-fn test_floating_point_bounded_ranges() {
+fn floating_point_bounded_ranges() {
     const ITERS: usize = 1000;
 
     // Test f32 with Rng
@@ -198,7 +196,7 @@ fn test_floating_point_bounded_ranges() {
 }
 
 #[test]
-fn test_rng_reseed() {
+fn rng_reseed() {
     let rng = randy::rng::CellRng::new();
     rng.reseed(42);
     let val1: u32 = rng.random();
@@ -211,7 +209,7 @@ fn test_rng_reseed() {
 }
 
 #[test]
-fn test_atomic_rng_reseed() {
+fn atomic_rng_reseed() {
     let rng = randy::rng::AtomicRng::new();
     rng.reseed(42);
     let val1: u32 = rng.random();
@@ -224,7 +222,7 @@ fn test_atomic_rng_reseed() {
 }
 
 #[test]
-fn test_atomic_rng_iter() {
+fn atomic_rng_iter() {
     let atomic_rng = randy::rng::AtomicRng::new();
     let numbers: Vec<u32> = atomic_rng.iter().take(10).collect();
     assert_eq!(numbers.len(), 10);
@@ -236,7 +234,7 @@ fn test_atomic_rng_iter() {
 }
 
 #[test]
-fn test_rng_iter() {
+fn rng_iter() {
     let rng = randy::rng::CellRng::new();
     let numbers: Vec<u32> = rng.iter().take(10).collect();
     assert_eq!(numbers.len(), 10);
@@ -248,7 +246,47 @@ fn test_rng_iter() {
 }
 
 #[test]
-fn test_rng_distinct_bounded() {
+fn rng_shuffle_iter_exact_size_and_mutation() {
+    let rng = randy::rng::CellRng::new();
+    rng.reseed(4321);
+
+    let mut data = [0_u8, 1, 2, 3];
+    let mut iter = rng.shuffle_iter(&mut data);
+
+    assert_eq!(iter.len(), 4);
+
+    let mut seen = HashSet::new();
+    while let Some(value) = iter.next() {
+        seen.insert(*value);
+        *value += 10;
+        assert_eq!(iter.len() + seen.len(), 4);
+    }
+
+    assert_eq!(seen, HashSet::from([0, 1, 2, 3]));
+    assert_eq!(
+        data.iter().copied().collect::<HashSet<_>>(),
+        HashSet::from([10, 11, 12, 13])
+    );
+}
+
+#[test]
+fn atomic_rng_shuffle_iter_is_deterministic_after_reseed() {
+    let rng = randy::rng::AtomicRng::new();
+
+    let mut left = [10, 20, 30, 40, 50];
+    let mut right = [10, 20, 30, 40, 50];
+
+    rng.reseed(2024);
+    let left_values: Vec<_> = rng.shuffle_iter(&mut left).collect();
+
+    rng.reseed(2024);
+    let right_values: Vec<_> = rng.shuffle_iter(&mut right).collect();
+
+    assert_eq!(left_values, right_values);
+}
+
+#[test]
+fn rng_distinct_bounded() {
     let rng = randy::rng::CellRng::new();
     let values: [u8; 16] = rng.distinct_bounded(0..64);
     assert!(values.iter().all(|&v| (0..64).contains(&v)));
@@ -260,7 +298,7 @@ fn test_rng_distinct_bounded() {
 }
 
 #[test]
-fn test_atomic_rng_distinct_bounded() {
+fn atomic_rng_distinct_bounded() {
     let rng = randy::rng::AtomicRng::new();
     let values: [u8; 16] = rng.distinct_bounded(0..64);
     assert!(values.iter().all(|&v| (0..64).contains(&v)));
@@ -272,7 +310,7 @@ fn test_atomic_rng_distinct_bounded() {
 }
 
 #[test]
-fn test_rng_choose_softmax() {
+fn rng_choose_softmax() {
     let rng = randy::rng::CellRng::new();
     let data = ["a", "bb", "ccc", "dddd"];
 
@@ -286,7 +324,7 @@ fn test_rng_choose_softmax() {
 }
 
 #[test]
-fn test_atomic_rng_choose_softmax() {
+fn atomic_rng_choose_softmax() {
     let rng = randy::rng::AtomicRng::new();
     let data = ["a", "bb", "ccc", "dddd"];
 

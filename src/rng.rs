@@ -84,6 +84,15 @@ pub struct Rng<C> {
     core: C,
 }
 
+/// An iterator that yields mutable references to elements from a slice in random order.
+///
+/// Each call to [`Iterator::next`] performs a single Fisher-Yates step on the remaining prefix of
+/// the slice and returns a mutable reference to the selected element.
+pub struct ShuffleIter<'a, C, T> {
+    rng: &'a Rng<C>,
+    remaining: &'a mut [T],
+}
+
 impl<C: Core> Rng<C> {
     /// Generates a random value of type `T` within the specified range. For example, `10..20`
     /// returns a value between 10 (inclusive) and 20 (exclusive).
@@ -345,6 +354,37 @@ impl<C: Core> Rng<C> {
         }
     }
 
+    /// Returns an iterator that yields mutable references to elements from `data` in random
+    /// order.
+    ///
+    /// The iterator shuffles lazily: each call to [`Iterator::next`] performs one step of the
+    /// Fisher-Yates algorithm and returns the selected element as a mutable reference. The slice
+    /// is modified in place, and if the iterator is exhausted, it will be fully shuffled. This is
+    /// useful when only a few randomly ordered elements are needed from a large slice, since the
+    /// remaining elements do not need to be shuffled eagerly. For shuffling the entire slice,
+    /// consider using the [`shuffle`] method instead.
+    ///
+    /// # Example
+    /// ```
+    /// # use randy::CellRng;
+    /// let rng = CellRng::new();
+    /// let mut data = [1, 2, 3, 4];
+    /// for value in rng.shuffle_iter(&mut data) {
+    ///     *value *= 2;
+    /// }
+    ///
+    /// assert!(data.iter().all(|value| value % 2 == 0));
+    /// ```
+    pub fn shuffle_iter<'a, T>(&'a self, data: &'a mut [T]) -> ShuffleIter<'a, C, T>
+    where
+        usize: RandomRange<Self>,
+    {
+        ShuffleIter {
+            rng: self,
+            remaining: data,
+        }
+    }
+
     /// Splits a new RNG instance from the current one. The new instance will have a different,
     /// deterministic state based on the current state of the RNG.
     pub fn split(&self) -> Self {
@@ -373,6 +413,35 @@ impl<C: Core> Generator<u64> for Rng<C> {
         self.u64()
     }
 }
+
+impl<'a, C: Core, T> Iterator for ShuffleIter<'a, C, T>
+where
+    usize: RandomRange<Rng<C>>,
+{
+    type Item = &'a mut T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let len = self.remaining.len();
+        if len == 0 {
+            return None;
+        }
+
+        let index = usize::random_range(self.rng, 0..len);
+        self.remaining.swap(index, len - 1);
+
+        let remaining = core::mem::take(&mut self.remaining);
+        let (item, prefix) = remaining.split_last_mut().unwrap();
+        self.remaining = prefix;
+        Some(item)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.remaining.len();
+        (len, Some(len))
+    }
+}
+
+impl<'a, C: Core, T> ExactSizeIterator for ShuffleIter<'a, C, T> where usize: RandomRange<Rng<C>> {}
 
 /// The increment used to update the state of the RNG. This value was selected so that it is
 /// coprime to 2^64, and `INCREMENT / 2^64` is approximately `phi - 1`, where `phi` is the
