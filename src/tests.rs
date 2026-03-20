@@ -310,6 +310,104 @@ fn atomic_rng_distinct_bounded() {
 }
 
 #[test]
+fn rng_choose_where_returns_none_for_empty_or_missing_match() {
+    let rng = randy::rng::CellRng::new();
+    let empty: [u8; 0] = [];
+    let data = [1, 3, 5, 7];
+
+    assert_eq!(rng.choose_where(&empty, |_| true), None);
+    assert_eq!(rng.choose_where(&data, |value| value % 2 == 0), None);
+}
+
+#[test]
+fn rng_choose_where_evaluates_each_element_once() {
+    let rng = randy::rng::CellRng::new();
+    let data = [1, 3, 4, 5];
+    let evaluations = Cell::new(0);
+
+    let picked = rng.choose_where(&data, |value| {
+        evaluations.set(evaluations.get() + 1);
+        value % 2 == 0
+    });
+
+    assert_eq!(picked, Some(&4));
+    assert_eq!(evaluations.get(), data.len());
+}
+
+#[test]
+fn rng_choose_where_selects_only_matching_elements() {
+    let rng = randy::rng::CellRng::new();
+    let data = [1, 2, 3, 4, 5, 6];
+
+    for _ in 0..256 {
+        let picked = rng.choose_where(&data, |value| value % 2 == 0).copied();
+        assert!(matches!(picked, Some(2) | Some(4) | Some(6)));
+    }
+}
+
+#[test]
+fn rng_choose_where_is_deterministic_after_reseed() {
+    let rng = randy::rng::CellRng::new();
+    let data = [10, 11, 12, 13, 14, 15];
+
+    rng.reseed(2024);
+    let left: Vec<_> = (0..16)
+        .map(|_| *rng.choose_where(&data, |value| value % 2 == 0).unwrap())
+        .collect();
+
+    rng.reseed(2024);
+    let right: Vec<_> = (0..16)
+        .map(|_| *rng.choose_where(&data, |value| value % 2 == 0).unwrap())
+        .collect();
+
+    assert_eq!(left, right);
+}
+
+#[test]
+fn atomic_rng_choose_where_is_deterministic_after_reseed() {
+    let rng = randy::rng::AtomicRng::new();
+    let data = [10, 11, 12, 13, 14, 15];
+
+    rng.reseed(2024);
+    let left: Vec<_> = (0..16)
+        .map(|_| *rng.choose_where(&data, |value| value % 2 == 0).unwrap())
+        .collect();
+
+    rng.reseed(2024);
+    let right: Vec<_> = (0..16)
+        .map(|_| *rng.choose_where(&data, |value| value % 2 == 0).unwrap())
+        .collect();
+
+    assert_eq!(left, right);
+}
+
+#[test]
+fn rng_choose_where_is_approximately_uniform() {
+    const SAMPLES: usize = 24_000;
+
+    let rng = randy::rng::CellRng::new();
+    let data = [10, 20, 30, 41, 51];
+    let mut counts = [0usize; 3];
+
+    rng.reseed(7);
+    for _ in 0..SAMPLES {
+        match rng.choose_where(&data, |value| *value < 40).copied() {
+            Some(10) => counts[0] += 1,
+            Some(20) => counts[1] += 1,
+            Some(30) => counts[2] += 1,
+            other => panic!("unexpected selection: {other:?}"),
+        }
+    }
+
+    let min = *counts.iter().min().unwrap();
+    let max = *counts.iter().max().unwrap();
+    assert!(
+        max - min < SAMPLES / 10,
+        "selection is too imbalanced: {counts:?}"
+    );
+}
+
+#[test]
 fn rng_choose_softmax() {
     let rng = randy::rng::CellRng::new();
     let data = ["a", "bb", "ccc", "dddd"];

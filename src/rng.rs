@@ -146,6 +146,39 @@ impl<C: Core> Rng<C> {
         }
     }
 
+    /// Chooses a random element from the slice `data` among those that satisfy `predicate` and
+    /// returns a reference to it. If no element satisfies the predicate, returns `None`.
+    ///
+    /// The predicate is evaluated once per element in slice order. Selection is uniform across
+    /// all matching elements.
+    ///
+    /// # Example
+    /// ```
+    /// # use randy::CellRng;
+    /// let rng = CellRng::new();
+    /// let data = [1, 2, 3, 4, 5];
+    /// let value = rng.choose_where(&data, |value| value % 2 == 0);
+    /// assert!(matches!(value, Some(&2) | Some(&4)));
+    /// ```
+    pub fn choose_where<'a, T, F>(&'a self, data: &'a [T], mut predicate: F) -> Option<&'a T>
+    where
+        F: FnMut(&T) -> bool,
+    {
+        let mut chosen = None;
+        let mut matches: usize = 0;
+
+        for value in data {
+            if predicate(value) {
+                matches += 1;
+                if self.bounded(..matches) == 0 {
+                    chosen = Some(value);
+                }
+            }
+        }
+
+        chosen
+    }
+
     /// Selects an element from `data` according to the softmax distribution induced by `f` and
     /// temperature `t`. Ignores non-finite values returned by `f`. Values returned from `f` are
     /// cached to improve performance when `f` is expensive to compute.
