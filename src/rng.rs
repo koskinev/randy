@@ -40,7 +40,7 @@ pub struct AtomicCore {
 }
 
 /// A core RNG with `Cell`-backed state for single-threaded use.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CellCore {
     pub(crate) state: Cell<u64>,
 }
@@ -79,11 +79,12 @@ impl Core for CellCore {
 }
 
 /// A generic RNG wrapper providing higher-level random data generation.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Rng<C> {
     core: C,
 }
 
+#[derive(Debug)]
 /// An iterator that yields mutable references to elements from a slice in random order.
 ///
 /// Each call to [`Iterator::next`] performs a single Fisher-Yates step on the remaining prefix of
