@@ -535,7 +535,7 @@ fn seed() -> u64 {
 /// Shuffles the elements of the slice `data` using the Fisher-Yates algorithm.
 ///
 /// # Example
-/// ```
+/// ```rust
 /// # use randy::shuffle;
 /// let mut data = [1, 2, 3, 4, 5];
 /// shuffle(&mut data);
