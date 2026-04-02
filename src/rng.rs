@@ -99,7 +99,7 @@ impl<C: Core> Rng<C> {
     /// returns a value between 10 (inclusive) and 20 (exclusive).
     ///
     /// # Example
-    /// ```
+    /// ```rust
     /// # use randy::CellRng;
     /// let rng = CellRng::new();
     /// let value: u32 = rng.bounded(10..20);
@@ -131,7 +131,7 @@ impl<C: Core> Rng<C> {
     /// is empty, returns `None`.
     ///
     /// # Example
-    /// ```
+    /// ```rust
     /// # use randy::CellRng;
     /// let rng = CellRng::new();
     /// let data = [1, 2, 3, 4, 5];
@@ -154,7 +154,7 @@ impl<C: Core> Rng<C> {
     /// all matching elements.
     ///
     /// # Example
-    /// ```
+    /// ```rust
     /// # use randy::CellRng;
     /// let rng = CellRng::new();
     /// let data = [1, 2, 3, 4, 5];
@@ -193,7 +193,7 @@ impl<C: Core> Rng<C> {
     /// elements before exponentiating, which helps prevent overflow.
     ///
     /// # Example
-    /// ```
+    /// ```rust
     /// # use randy::CellRng;
     /// let rng = CellRng::new();
     /// let data = ["a", "bb", "ccc"];
@@ -269,7 +269,7 @@ impl<C: Core> Rng<C> {
     /// values.
     ///
     /// # Example
-    /// ```
+    /// ```rust
     /// # use randy::CellRng;
     /// let rng = CellRng::new();
     /// let values: [u8; 4] = rng.distinct_bounded(0..10);
@@ -301,7 +301,7 @@ impl<C: Core> Rng<C> {
     /// using this RNG instance.
     ///
     /// # Example
-    /// ```
+    /// ```rust
     /// # use randy::CellRng;
     /// let rng = CellRng::new();
     /// let numbers: Vec<u32> = rng.iter().take(3).collect();
@@ -321,7 +321,7 @@ impl<C: Core> Rng<C> {
     /// explicit seed and ensure deterministic output across builds.
     ///
     /// # Example
-    /// ```
+    /// ```rust
     /// # use randy::CellRng;
     /// let rng = CellRng::new();
     /// let x: u32 = rng.random();
@@ -335,7 +335,7 @@ impl<C: Core> Rng<C> {
     /// T::MAX]`. For floating-point numbers, the value is in the range `[0, 1)`.
     ///
     /// # Example
-    /// ```
+    /// ```rust
     /// # use randy::CellRng;
     /// let rng = CellRng::new();
     /// let value: f32 = rng.random();
@@ -353,7 +353,7 @@ impl<C: Core> Rng<C> {
     /// This is the recommended way to get deterministic output across builds and platforms.
     ///
     /// # Example
-    /// ```
+    /// ```rust
     /// # use randy::CellRng;
     /// let rng = CellRng::new();
     ///
@@ -369,7 +369,7 @@ impl<C: Core> Rng<C> {
     /// Shuffles the elements of the slice `data` using the Fisher-Yates algorithm.
     ///
     /// # Example
-    /// ```
+    /// ```rust
     /// # use randy::CellRng;
     /// let rng = CellRng::new();
     /// let mut data = [1, 2, 3, 4, 5];
@@ -399,7 +399,7 @@ impl<C: Core> Rng<C> {
     /// consider using the [`shuffle`] method instead.
     ///
     /// # Example
-    /// ```
+    /// ```rust
     /// # use randy::CellRng;
     /// let rng = CellRng::new();
     /// let mut data = [1, 2, 3, 4];
@@ -432,6 +432,14 @@ impl<C: Core> Rng<C> {
     /// Returns the next `u64` value from the pseudorandom sequence.
     pub(crate) fn u64(&self) -> u64 {
         self.core.u64()
+    }
+
+    /// Creates a new RNG instance with the given seed. This is a convenience method that combines
+    /// `new` and `reseed`.
+    pub fn with_seed(seed: u64) -> Self {
+        let core = C::new();
+        core.reseed(seed);
+        Self { core }
     }
 }
 
