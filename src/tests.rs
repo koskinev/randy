@@ -310,6 +310,97 @@ fn atomic_rng_distinct_bounded() {
 }
 
 #[test]
+fn rng_choose_iter_returns_none_for_empty_iterator() {
+    let rng = randy::rng::CellRng::new();
+    let empty = std::iter::empty::<u8>();
+
+    assert_eq!(rng.choose_from_iter(empty), None);
+}
+
+#[test]
+fn atomic_rng_choose_iter_returns_none_for_empty_iterator() {
+    let rng = randy::rng::AtomicRng::new();
+    let empty = std::iter::empty::<u8>();
+
+    assert_eq!(rng.choose_from_iter(empty), None);
+}
+
+#[test]
+fn rng_choose_iter_returns_value_from_iterator() {
+    let rng = randy::rng::CellRng::new();
+
+    for _ in 0..64 {
+        let picked = rng
+            .choose_from_iter(vec![String::from("a"), String::from("b"), String::from("c")])
+            .unwrap();
+        assert!(matches!(picked.as_str(), "a" | "b" | "c"));
+    }
+}
+
+#[test]
+fn atomic_rng_choose_iter_returns_value_from_iterator() {
+    let rng = randy::rng::AtomicRng::new();
+
+    for _ in 0..64 {
+        let picked = rng
+            .choose_from_iter(vec![String::from("a"), String::from("b"), String::from("c")])
+            .unwrap();
+        assert!(matches!(picked.as_str(), "a" | "b" | "c"));
+    }
+}
+
+#[test]
+fn rng_choose_iter_is_deterministic_after_reseed() {
+    let rng = randy::rng::CellRng::new();
+
+    rng.reseed(2024);
+    let left: Vec<_> = (0..16).map(|_| rng.choose_from_iter(10..=15).unwrap()).collect();
+
+    rng.reseed(2024);
+    let right: Vec<_> = (0..16).map(|_| rng.choose_from_iter(10..=15).unwrap()).collect();
+
+    assert_eq!(left, right);
+}
+
+#[test]
+fn atomic_rng_choose_iter_is_deterministic_after_reseed() {
+    let rng = randy::rng::AtomicRng::new();
+
+    rng.reseed(2024);
+    let left: Vec<_> = (0..16).map(|_| rng.choose_from_iter(10..=15).unwrap()).collect();
+
+    rng.reseed(2024);
+    let right: Vec<_> = (0..16).map(|_| rng.choose_from_iter(10..=15).unwrap()).collect();
+
+    assert_eq!(left, right);
+}
+
+#[test]
+fn rng_choose_iter_is_approximately_uniform() {
+    const SAMPLES: usize = 24_000;
+
+    let rng = randy::rng::CellRng::new();
+    let mut counts = [0usize; 3];
+
+    rng.reseed(7);
+    for _ in 0..SAMPLES {
+        match rng.choose_from_iter([10, 20, 30]).unwrap() {
+            10 => counts[0] += 1,
+            20 => counts[1] += 1,
+            30 => counts[2] += 1,
+            other => panic!("unexpected selection: {other:?}"),
+        }
+    }
+
+    let min = *counts.iter().min().unwrap();
+    let max = *counts.iter().max().unwrap();
+    assert!(
+        max - min < SAMPLES / 10,
+        "selection is too imbalanced: {counts:?}"
+    );
+}
+
+#[test]
 fn rng_choose_where_returns_none_for_empty_or_missing_match() {
     let rng = randy::rng::CellRng::new();
     let empty: [u8; 0] = [];

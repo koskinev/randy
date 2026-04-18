@@ -147,6 +147,35 @@ impl<C: Core> Rng<C> {
         }
     }
 
+    /// Chooses a random element yielded by `iter` and returns it. If the iterator is empty,
+    /// returns `None`.
+    ///
+    /// The iterator is consumed exactly once in iteration order. Selection is uniform across all
+    /// yielded elements.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use randy::CellRng;
+    /// let rng = CellRng::new();
+    /// let value = rng.choose_from_iter(1..=5);
+    /// assert!(matches!(value, Some(1..=5)));
+    /// ```
+    pub fn choose_from_iter<T, I>(&self, iter: I) -> Option<T>
+    where
+        I: IntoIterator<Item = T>,
+        usize: RandomRange<Self>,
+    {
+        let mut chosen = None;
+
+        for (index, value) in iter.into_iter().enumerate() {
+            if self.bounded(..(index + 1)) == 0 {
+                chosen = Some(value);
+            }
+        }
+
+        chosen
+    }
+
     /// Chooses a random element from the slice `data` among those that satisfy `predicate` and
     /// returns a reference to it. If no element satisfies the predicate, returns `None`.
     ///
