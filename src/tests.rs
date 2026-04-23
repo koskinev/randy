@@ -331,7 +331,11 @@ fn rng_choose_iter_returns_value_from_iterator() {
 
     for _ in 0..64 {
         let picked = rng
-            .choose_from_iter(vec![String::from("a"), String::from("b"), String::from("c")])
+            .choose_from_iter(vec![
+                String::from("a"),
+                String::from("b"),
+                String::from("c"),
+            ])
             .unwrap();
         assert!(matches!(picked.as_str(), "a" | "b" | "c"));
     }
@@ -343,7 +347,11 @@ fn atomic_rng_choose_iter_returns_value_from_iterator() {
 
     for _ in 0..64 {
         let picked = rng
-            .choose_from_iter(vec![String::from("a"), String::from("b"), String::from("c")])
+            .choose_from_iter(vec![
+                String::from("a"),
+                String::from("b"),
+                String::from("c"),
+            ])
             .unwrap();
         assert!(matches!(picked.as_str(), "a" | "b" | "c"));
     }
@@ -354,10 +362,14 @@ fn rng_choose_iter_is_deterministic_after_reseed() {
     let rng = randy::rng::CellRng::new();
 
     rng.reseed(2024);
-    let left: Vec<_> = (0..16).map(|_| rng.choose_from_iter(10..=15).unwrap()).collect();
+    let left: Vec<_> = (0..16)
+        .map(|_| rng.choose_from_iter(10..=15).unwrap())
+        .collect();
 
     rng.reseed(2024);
-    let right: Vec<_> = (0..16).map(|_| rng.choose_from_iter(10..=15).unwrap()).collect();
+    let right: Vec<_> = (0..16)
+        .map(|_| rng.choose_from_iter(10..=15).unwrap())
+        .collect();
 
     assert_eq!(left, right);
 }
@@ -367,10 +379,14 @@ fn atomic_rng_choose_iter_is_deterministic_after_reseed() {
     let rng = randy::rng::AtomicRng::new();
 
     rng.reseed(2024);
-    let left: Vec<_> = (0..16).map(|_| rng.choose_from_iter(10..=15).unwrap()).collect();
+    let left: Vec<_> = (0..16)
+        .map(|_| rng.choose_from_iter(10..=15).unwrap())
+        .collect();
 
     rng.reseed(2024);
-    let right: Vec<_> = (0..16).map(|_| rng.choose_from_iter(10..=15).unwrap()).collect();
+    let right: Vec<_> = (0..16)
+        .map(|_| rng.choose_from_iter(10..=15).unwrap())
+        .collect();
 
     assert_eq!(left, right);
 }
@@ -475,7 +491,7 @@ fn atomic_rng_choose_where_is_deterministic_after_reseed() {
 #[test]
 fn rng_uniform_sampler_returns_none_until_observation() {
     let rng = randy::rng::CellRng::new();
-    let mut sampler = rng.uniform_sampler::<u8>();
+    let mut sampler = rng.uniform_sampler();
     let data = [10, 20, 30, 40];
 
     assert_eq!(sampler.selected(), None);
@@ -489,7 +505,7 @@ fn rng_uniform_sampler_returns_none_until_observation() {
 #[test]
 fn atomic_rng_uniform_sampler_returns_none_until_observation() {
     let rng = randy::rng::AtomicRng::new();
-    let mut sampler = rng.uniform_sampler::<u8>();
+    let mut sampler = rng.uniform_sampler();
     let data = [10, 20, 30, 40];
 
     assert_eq!(sampler.selected(), None);

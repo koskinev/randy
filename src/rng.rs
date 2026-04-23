@@ -97,13 +97,13 @@ pub struct ShuffleIter<'a, C, T> {
 #[derive(Debug)]
 /// A sampler that selects a random element with uniform probability from a stream of observed
 /// elements using reservoir sampling.
-pub struct UniformSampler<'a, C, T> {
+pub struct UniformSampler<C, T> {
     /// The RNG used for sampling.
     rng: Rng<C>,
     /// The number of elements seen so far.
     seen: usize,
     /// The currently selected element.
-    selected: Option<&'a T>,
+    selected: Option<T>,
 }
 
 impl<C: Core> Rng<C> {
@@ -497,7 +497,7 @@ impl<C: Core> Rng<C> {
     ///
     /// assert!(matches!(sampler.selected(), Some(&(1..=5))));
     /// ```
-    pub fn uniform_sampler<'a, T>(&self) -> UniformSampler<'a, C, T> {
+    pub fn uniform_sampler<T>(&self) -> UniformSampler<C, T> {
         UniformSampler {
             rng: self.split(),
             seen: 0,
@@ -556,22 +556,28 @@ where
 
 impl<'a, C: Core, T> ExactSizeIterator for ShuffleIter<'a, C, T> where usize: RandomRange<Rng<C>> {}
 
-impl<'a, C: Core, T> UniformSampler<'a, C, T>
+impl<C: Core, T> UniformSampler<C, T>
 where
     usize: RandomRange<Rng<C>>,
 {
+    /// Returns the selected element, consuming the sampler.
+    pub fn into_selected(self) -> Option<T> {
+        self.selected
+    }
+
     /// Observes the next element in the stream, selecting it with probability `1 / seen` if it is
     /// the `seen`-th element observed so far. This implements the reservoir sampling algorithm.
-    pub fn observe(&mut self, element: &'a T) {
+    pub fn observe(&mut self, element: T) {
         self.seen += 1;
         if self.rng.bounded(..self.seen) == 0 {
             self.selected = Some(element);
         }
     }
 
-    /// Returns the currently selected element, or `None` if no elements have been considered.
-    pub fn selected(&self) -> Option<&'a T> {
-        self.selected
+    /// Returns a reference to the currently selected element, or `None` if no elements have been
+    /// considered.
+    pub fn selected(&self) -> Option<&T> {
+        self.selected.as_ref()
     }
 }
 
