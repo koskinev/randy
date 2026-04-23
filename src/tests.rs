@@ -473,6 +473,117 @@ fn atomic_rng_choose_where_is_deterministic_after_reseed() {
 }
 
 #[test]
+fn rng_uniform_sampler_returns_none_until_observation() {
+    let rng = randy::rng::CellRng::new();
+    let mut sampler = rng.uniform_sampler::<u8>();
+    let data = [10, 20, 30, 40];
+
+    assert_eq!(sampler.selected(), None);
+
+    for (index, value) in data.iter().enumerate() {
+        sampler.observe(value);
+        assert!(data[..=index].contains(sampler.selected().unwrap()));
+    }
+}
+
+#[test]
+fn atomic_rng_uniform_sampler_returns_none_until_observation() {
+    let rng = randy::rng::AtomicRng::new();
+    let mut sampler = rng.uniform_sampler::<u8>();
+    let data = [10, 20, 30, 40];
+
+    assert_eq!(sampler.selected(), None);
+
+    for (index, value) in data.iter().enumerate() {
+        sampler.observe(value);
+        assert!(data[..=index].contains(sampler.selected().unwrap()));
+    }
+}
+
+#[test]
+fn rng_uniform_sampler_is_deterministic_after_reseed() {
+    let rng = randy::rng::CellRng::new();
+    let data = [10, 20, 30, 40, 50, 60];
+
+    rng.reseed(2024);
+    let left = {
+        let mut sampler = rng.uniform_sampler();
+        for value in &data {
+            sampler.observe(value);
+        }
+        sampler.selected().copied()
+    };
+
+    rng.reseed(2024);
+    let right = {
+        let mut sampler = rng.uniform_sampler();
+        for value in &data {
+            sampler.observe(value);
+        }
+        sampler.selected().copied()
+    };
+
+    assert_eq!(left, right);
+}
+
+#[test]
+fn atomic_rng_uniform_sampler_is_deterministic_after_reseed() {
+    let rng = randy::rng::AtomicRng::new();
+    let data = [10, 20, 30, 40, 50, 60];
+
+    rng.reseed(2024);
+    let left = {
+        let mut sampler = rng.uniform_sampler();
+        for value in &data {
+            sampler.observe(value);
+        }
+        sampler.selected().copied()
+    };
+
+    rng.reseed(2024);
+    let right = {
+        let mut sampler = rng.uniform_sampler();
+        for value in &data {
+            sampler.observe(value);
+        }
+        sampler.selected().copied()
+    };
+
+    assert_eq!(left, right);
+}
+
+#[test]
+fn rng_uniform_sampler_is_approximately_uniform() {
+    const SAMPLES: usize = 24_000;
+
+    let rng = randy::rng::CellRng::new();
+    let data = [10, 20, 30];
+    let mut counts = [0usize; 3];
+
+    rng.reseed(7);
+    for _ in 0..SAMPLES {
+        let mut sampler = rng.uniform_sampler();
+        for value in &data {
+            sampler.observe(value);
+        }
+
+        match sampler.selected().copied() {
+            Some(10) => counts[0] += 1,
+            Some(20) => counts[1] += 1,
+            Some(30) => counts[2] += 1,
+            other => panic!("unexpected selection: {other:?}"),
+        }
+    }
+
+    let min = *counts.iter().min().unwrap();
+    let max = *counts.iter().max().unwrap();
+    assert!(
+        max - min < SAMPLES / 10,
+        "selection is too imbalanced: {counts:?}"
+    );
+}
+
+#[test]
 fn rng_choose_where_is_approximately_uniform() {
     const SAMPLES: usize = 24_000;
 

@@ -94,6 +94,18 @@ pub struct ShuffleIter<'a, C, T> {
     remaining: &'a mut [T],
 }
 
+#[derive(Debug)]
+/// A sampler that selects a random element with uniform probability from a stream of observed
+/// elements using reservoir sampling.
+pub struct UniformSampler<'a, C, T> {
+    /// The RNG used for sampling.
+    rng: Rng<C>,
+    /// The number of elements seen so far.
+    seen: usize,
+    /// The currently selected element.
+    selected: Option<&'a T>,
+}
+
 impl<C: Core> Rng<C> {
     /// Generates a random value of type `T` within the specified range. For example, `10..20`
     /// returns a value between 10 (inclusive) and 20 (exclusive).
@@ -463,6 +475,36 @@ impl<C: Core> Rng<C> {
         self.core.u64()
     }
 
+    /// Creates a new reservoir sampler that selects a random element from a stream of observed
+    /// elements with uniform probability.
+    ///
+    /// The sampler maintains internal state to track the number of observed elements and the
+    /// currently selected element. Each call to [`UniformSampler::observe`] updates the state based
+    /// on the new element, and [`UniformSampler::selected`] returns the currently selected element.
+    ///
+    /// The sampler uses the `split` method to create a new RNG instance for sampling, which ensures
+    /// that the sampling process does not interfere with the state of the original RNG.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use randy::CellRng;
+    /// let rng = CellRng::new();
+    /// let mut sampler = rng.uniform_sampler();
+    /// let values = [1, 2, 3, 4, 5];
+    /// for x in &values {
+    ///     sampler.observe(x);
+    /// }
+    ///
+    /// assert!(matches!(sampler.selected(), Some(&(1..=5))));
+    /// ```
+    pub fn uniform_sampler<'a, T>(&self) -> UniformSampler<'a, C, T> {
+        UniformSampler {
+            rng: self.split(),
+            seen: 0,
+            selected: None,
+        }
+    }
+
     /// Creates a new RNG instance with the given seed. This is a convenience method that combines
     /// `new` and `reseed`.
     pub fn with_seed(seed: u64) -> Self {
@@ -513,6 +555,25 @@ where
 }
 
 impl<'a, C: Core, T> ExactSizeIterator for ShuffleIter<'a, C, T> where usize: RandomRange<Rng<C>> {}
+
+impl<'a, C: Core, T> UniformSampler<'a, C, T>
+where
+    usize: RandomRange<Rng<C>>,
+{
+    /// Observes the next element in the stream, selecting it with probability `1 / seen` if it is
+    /// the `seen`-th element observed so far. This implements the reservoir sampling algorithm.
+    pub fn observe(&mut self, element: &'a T) {
+        self.seen += 1;
+        if self.rng.bounded(..self.seen) == 0 {
+            self.selected = Some(element);
+        }
+    }
+
+    /// Returns the currently selected element, or `None` if no elements have been considered.
+    pub fn selected(&self) -> Option<&'a T> {
+        self.selected
+    }
+}
 
 /// The increment used to update the state of the RNG. This value was selected so that it is
 /// coprime to 2^64, and `INCREMENT / 2^64` is approximately `phi - 1`, where `phi` is the
