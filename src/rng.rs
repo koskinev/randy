@@ -601,6 +601,12 @@ where
         }
     }
 
+    /// Resets the selector to its initial state, forgetting all previously observed elements.
+    pub fn reset(&mut self) {
+        self.seen = 0;
+        self.selected = None;
+    }
+
     /// Returns a reference to the currently selected element, or `None` if no elements have been
     /// considered.
     pub fn selected(&self) -> Option<&T> {
@@ -625,6 +631,12 @@ where
         if f64::random(&self.rng) * self.total_weight < weight {
             self.selected = Some(element);
         }
+    }
+
+    /// Resets the selector to its initial state, forgetting all previously observed elements.
+    pub fn reset(&mut self) {
+        self.total_weight = 0.0;
+        self.selected = None;
     }
 
     /// Returns a reference to the currently selected element, or `None` if no valid elements have
