@@ -201,6 +201,122 @@ impl<C: Core> Rng<C> {
         chosen
     }
 
+    /// Selects an element from `data` according to the softmax distribution induced by `f` and
+    /// temperature `t`. Ignores non-finite values returned by `f`. Values returned from `f` are
+    /// cached to improve performance when `f` is expensive to compute.
+    ///
+    /// Edge cases:
+    /// - If the slice is empty, or if all values returned by `f` are non-finite, returns `None`
+    /// - If the temperature is less or equal to zero, infinite or `NaN`, returns the maximum
+    ///   element by `f`.
+    ///
+    /// This implementation computes the "safe" softmax by subtracting the maximum value from all
+    /// elements before exponentiating, which helps prevent overflow.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use randy::CellRng;
+    /// let rng = CellRng::new();
+    /// let data = ["a", "bb", "ccc"];
+    /// let picked = rng.choose_softmax(&data, |s| s.len() as f64, 0.5);
+    /// assert!(picked.is_some());
+    /// ```
+    pub fn choose_softmax<'a, T, F>(&self, data: &'a [T], mut f: F, t: f64) -> Option<&'a T>
+    where
+        F: FnMut(&T) -> f64,
+        usize: Random<Self>,
+    {
+        if data.is_empty() {
+            return None;
+        }
+    
+        // Evaluate keys once to avoid inconsistent or expensive re-computation.
+        let mut values = Vec::with_capacity(data.len());
+    
+        // Find the maximum finite value for numerical stability and track the index.
+        let (mut index, mut max) = (0, f64::NEG_INFINITY);
+        let mut any_finite = false;
+        for (i, elem) in data.iter().enumerate() {
+            let v = f(elem);
+            if v.is_finite() {
+                any_finite = true;
+                values.push(v);
+                if v > max {
+                    (index, max) = (i, v);
+                }
+            }
+        }
+    
+        // Edge cases:
+        // - No finite values: return the first index (the above code ensures `index == 0`).
+        // - Non-positive or non-finite temperature: return the index of the maximum element.
+        if !any_finite || t <= 0.0 || !t.is_finite() {
+            return data.get(index);
+        }
+    
+        // Compute the normalization constant, skipping non-finite inputs.
+        let mut sum = 0.0f64;
+        for v in values.iter_mut() {
+            if v.is_finite() {
+                *v = ((*v - max) / t).exp();
+                sum += *v;
+            }
+        }
+        if sum <= 0.0 || !sum.is_finite() {
+            return None;
+        }
+    
+        // Draw from the distribution using a single pass.
+        let mut threshold = f64::random(self) * sum;
+        for (index, &weight) in values.iter().enumerate() {
+            if weight.is_finite() {
+                threshold -= weight;
+                if threshold <= 0.0 {
+                    return data.get(index);
+                }
+            }
+        }
+        data.get(index)
+    }
+
+    /// Chooses a random element from the slice `data` with probability proportional to the
+    /// positive finite weight returned by `weight_fn`.
+    ///
+    /// The weighting closure is evaluated once per element in slice order. Elements whose weights
+    /// are zero, negative, `NaN`, or infinite are ignored. If the slice is empty or if all
+    /// elements are ignored, returns `None`.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use randy::CellRng;
+    /// let rng = CellRng::new();
+    /// let data = [1, 2, 3];
+    /// let picked = rng.choose_weighted(&data, |value| *value as f64);
+    /// assert!(matches!(picked, Some(&1 | &2 | &3)));
+    /// ```
+    pub fn choose_weighted<'a, T, F>(&'a self, data: &'a [T], mut weight_fn: F) -> Option<&'a T>
+    where
+        F: FnMut(&T) -> f64,
+        f64: Random<Self>,
+    {
+        let mut chosen = None;
+        let mut total_weight = 0.0;
+    
+        for value in data {
+            let weight = weight_fn(value);
+            if !weight.is_finite() || weight <= 0.0 {
+                continue;
+            }
+    
+            total_weight += weight;
+            if f64::random(self) * total_weight < weight {
+                chosen = Some(value);
+            }
+        }
+    
+        chosen
+    }
+
     /// Chooses a random element from the slice `data` among those that satisfy `predicate` and
     /// returns a reference to it. If no element satisfies the predicate, returns `None`.
     ///
@@ -232,84 +348,6 @@ impl<C: Core> Rng<C> {
         }
 
         chosen
-    }
-
-    /// Selects an element from `data` according to the softmax distribution induced by `f` and
-    /// temperature `t`. Ignores non-finite values returned by `f`. Values returned from `f` are
-    /// cached to improve performance when `f` is expensive to compute.
-    ///
-    /// Edge cases:
-    /// - If the slice is empty, or if all values returned by `f` are non-finite, returns `None`
-    /// - If the temperature is less or equal to zero, infinite or `NaN`, returns the maximum
-    ///   element by `f`.
-    ///
-    /// This implementation computes the "safe" softmax by subtracting the maximum value from all
-    /// elements before exponentiating, which helps prevent overflow.
-    ///
-    /// # Example
-    /// ```rust
-    /// # use randy::CellRng;
-    /// let rng = CellRng::new();
-    /// let data = ["a", "bb", "ccc"];
-    /// let picked = rng.choose_softmax(&data, |s| s.len() as f64, 0.5);
-    /// assert!(picked.is_some());
-    /// ```
-    pub fn choose_softmax<'a, T, F>(&self, data: &'a [T], mut f: F, t: f64) -> Option<&'a T>
-    where
-        F: FnMut(&T) -> f64,
-        usize: Random<Self>,
-    {
-        if data.is_empty() {
-            return None;
-        }
-
-        // Evaluate keys once to avoid inconsistent or expensive re-computation.
-        let mut values = Vec::with_capacity(data.len());
-
-        // Find the maximum finite value for numerical stability and track the index.
-        let (mut index, mut max) = (0, f64::NEG_INFINITY);
-        let mut any_finite = false;
-        for (i, elem) in data.iter().enumerate() {
-            let v = f(elem);
-            if v.is_finite() {
-                any_finite = true;
-                values.push(v);
-                if v > max {
-                    (index, max) = (i, v);
-                }
-            }
-        }
-
-        // Edge cases:
-        // - No finite values: return the first index (the above code ensures `index == 0`).
-        // - Non-positive or non-finite temperature: return the index of the maximum element.
-        if !any_finite || t <= 0.0 || !t.is_finite() {
-            return data.get(index);
-        }
-
-        // Compute the normalization constant, skipping non-finite inputs.
-        let mut sum = 0.0f64;
-        for v in values.iter_mut() {
-            if v.is_finite() {
-                *v = ((*v - max) / t).exp();
-                sum += *v;
-            }
-        }
-        if sum <= 0.0 || !sum.is_finite() {
-            return None;
-        }
-
-        // Draw from the distribution using a single pass.
-        let mut threshold = f64::random(self) * sum;
-        for (index, &weight) in values.iter().enumerate() {
-            if weight.is_finite() {
-                threshold -= weight;
-                if threshold <= 0.0 {
-                    return data.get(index);
-                }
-            }
-        }
-        data.get(index)
     }
 
     /// Generates an array of `N` distinct random values of type `T` within the specified range.

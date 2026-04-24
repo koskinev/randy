@@ -489,6 +489,194 @@ fn atomic_rng_choose_where_is_deterministic_after_reseed() {
 }
 
 #[test]
+fn rng_choose_weighted_returns_none_for_empty_or_invalid_weights() {
+    let rng = randy::rng::CellRng::new();
+    let empty: [i32; 0] = [];
+    let data = [10, 20, 30, 40];
+
+    assert_eq!(rng.choose_weighted(&empty, |value| *value as f64), None);
+    assert_eq!(
+        rng.choose_weighted(&data, |value| match *value {
+            10 => 0.0,
+            20 => -1.0,
+            30 => f64::NAN,
+            _ => f64::INFINITY,
+        }),
+        None
+    );
+}
+
+#[test]
+fn rng_choose_weighted_evaluates_each_element_once() {
+    let rng = randy::rng::CellRng::new();
+    let data = [1, 3, 4, 5];
+    let evaluations = Cell::new(0);
+
+    let picked = rng.choose_weighted(&data, |value| {
+        evaluations.set(evaluations.get() + 1);
+        if value % 2 == 0 { 1.0 } else { 0.0 }
+    });
+
+    assert_eq!(picked, Some(&4));
+    assert_eq!(evaluations.get(), data.len());
+}
+
+#[test]
+fn rng_choose_weighted_selects_only_positive_finite_weights() {
+    let rng = randy::rng::CellRng::new();
+    let data = [1, 2, 3, 4, 5, 6];
+
+    for _ in 0..256 {
+        let picked = rng.choose_weighted(&data, |value| match *value {
+            2 | 6 => 1.0,
+            4 => f64::NAN,
+            _ => 0.0,
+        });
+        assert!(matches!(picked, Some(&2) | Some(&6)));
+    }
+}
+
+#[test]
+fn rng_choose_weighted_is_deterministic_after_reseed() {
+    let rng = randy::rng::CellRng::new();
+    let data = [10, 20, 30, 40, 50, 60];
+
+    rng.reseed(2024);
+    let left: Vec<_> = (0..16)
+        .map(|_| {
+            *rng.choose_weighted(&data, |value| match *value {
+                10 => 1.0,
+                20 => 3.0,
+                30 => 0.0,
+                40 => 6.0,
+                50 => f64::NAN,
+                _ => 2.0,
+            })
+            .unwrap()
+        })
+        .collect();
+
+    rng.reseed(2024);
+    let right: Vec<_> = (0..16)
+        .map(|_| {
+            *rng.choose_weighted(&data, |value| match *value {
+                10 => 1.0,
+                20 => 3.0,
+                30 => 0.0,
+                40 => 6.0,
+                50 => f64::NAN,
+                _ => 2.0,
+            })
+            .unwrap()
+        })
+        .collect();
+
+    assert_eq!(left, right);
+}
+
+#[test]
+fn atomic_rng_choose_weighted_is_deterministic_after_reseed() {
+    let rng = randy::rng::AtomicRng::new();
+    let data = [10, 20, 30, 40, 50, 60];
+
+    rng.reseed(2024);
+    let left: Vec<_> = (0..16)
+        .map(|_| {
+            *rng.choose_weighted(&data, |value| match *value {
+                10 => 1.0,
+                20 => 3.0,
+                30 => 0.0,
+                40 => 6.0,
+                50 => f64::INFINITY,
+                _ => 2.0,
+            })
+            .unwrap()
+        })
+        .collect();
+
+    rng.reseed(2024);
+    let right: Vec<_> = (0..16)
+        .map(|_| {
+            *rng.choose_weighted(&data, |value| match *value {
+                10 => 1.0,
+                20 => 3.0,
+                30 => 0.0,
+                40 => 6.0,
+                50 => f64::INFINITY,
+                _ => 2.0,
+            })
+            .unwrap()
+        })
+        .collect();
+
+    assert_eq!(left, right);
+}
+
+#[test]
+fn rng_choose_weighted_is_approximately_weighted() {
+    const SAMPLES: usize = 60_000;
+
+    let rng = randy::rng::CellRng::new();
+    let data = [10, 20, 30];
+    let mut counts = [0usize; 3];
+
+    rng.reseed(7);
+    for _ in 0..SAMPLES {
+        match rng.choose_weighted(&data, |value| match *value {
+            10 => 1.0,
+            20 => 2.0,
+            30 => 7.0,
+            _ => unreachable!(),
+        }) {
+            Some(&10) => counts[0] += 1,
+            Some(&20) => counts[1] += 1,
+            Some(&30) => counts[2] += 1,
+            other => panic!("unexpected selection: {other:?}"),
+        }
+    }
+
+    let expected = [SAMPLES / 10, SAMPLES / 5, SAMPLES * 7 / 10];
+    for (count, expected) in counts.into_iter().zip(expected) {
+        assert!(
+            count.abs_diff(expected) < expected / 14,
+            "selection is too imbalanced: {counts:?}, expected near {expected}"
+        );
+    }
+}
+
+#[test]
+fn rng_choose_weighted_skips_invalid_weights_in_mixed_slice() {
+    const SAMPLES: usize = 36_000;
+
+    let rng = randy::rng::CellRng::new();
+    let data = [10, 20, 30];
+    let mut counts = [0usize; 2];
+
+    rng.reseed(9);
+    for _ in 0..SAMPLES {
+        match rng.choose_weighted(&data, |value| match *value {
+            10 => 1.0,
+            20 => f64::NAN,
+            30 => 2.0,
+            _ => unreachable!(),
+        }) {
+            Some(&10) => counts[0] += 1,
+            Some(&20) => panic!("invalid-weight element should never be selected"),
+            Some(&30) => counts[1] += 1,
+            other => panic!("unexpected selection: {other:?}"),
+        }
+    }
+
+    let expected = [SAMPLES / 3, SAMPLES * 2 / 3];
+    for (count, expected) in counts.into_iter().zip(expected) {
+        assert!(
+            count.abs_diff(expected) < expected / 12,
+            "selection is too imbalanced: {counts:?}, expected near {expected}"
+        );
+    }
+}
+
+#[test]
 fn rng_uniform_sampler_returns_none_until_observation() {
     let rng = randy::rng::CellRng::new();
     let mut sampler = rng.uniform_selector();
