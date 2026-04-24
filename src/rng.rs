@@ -1,6 +1,6 @@
 use std::{
     cell::Cell,
-    ops::{Bound, RangeBounds},
+    ops::{Bound, Deref, RangeBounds},
     sync::atomic::{AtomicU64, Ordering},
 };
 
@@ -95,13 +95,26 @@ pub struct ShuffleIter<'a, C, T> {
 }
 
 #[derive(Debug)]
-/// A sampler that selects a random element with uniform probability from a stream of observed
+/// A selector for picking a random element with uniform probability from a stream of observed
 /// elements using reservoir sampling.
-pub struct UniformSampler<C, T> {
+pub struct UniformSelector<C, T> {
     /// The RNG used for sampling.
     rng: Rng<C>,
     /// The number of elements seen so far.
     seen: usize,
+    /// The currently selected element.
+    selected: Option<T>,
+}
+
+/// A selector for picking a random element from a stream of observed elements with probability
+/// proportional to a positive finite weight computed for each element.
+pub struct WeightedSelector<C, T, F> {
+    /// The RNG used for sampling.
+    rng: Rng<C>,
+    /// Computes the weight for each observed element.
+    weight_fn: F,
+    /// The total weight of all participating elements observed so far.
+    total_weight: f64,
     /// The currently selected element.
     selected: Option<T>,
 }
@@ -475,32 +488,51 @@ impl<C: Core> Rng<C> {
         self.core.u64()
     }
 
-    /// Creates a new reservoir sampler that selects a random element from a stream of observed
+    /// Creates a new uniform selector that picks a random element from a stream of observed
     /// elements with uniform probability.
-    ///
-    /// The sampler maintains internal state to track the number of observed elements and the
-    /// currently selected element. Each call to [`UniformSampler::observe`] updates the state based
-    /// on the new element, and [`UniformSampler::selected`] returns the currently selected element.
-    ///
-    /// The sampler uses the `split` method to create a new RNG instance for sampling, which ensures
-    /// that the sampling process does not interfere with the state of the original RNG.
     ///
     /// # Example
     /// ```rust
     /// # use randy::CellRng;
     /// let rng = CellRng::new();
-    /// let mut sampler = rng.uniform_sampler();
-    /// let values = [1, 2, 3, 4, 5];
+    /// let mut selector = rng.uniform_selector();
+    /// let values = [1, 2, 3];
     /// for x in &values {
-    ///     sampler.observe(x);
+    ///     selector.observe(x);
     /// }
     ///
-    /// assert!(matches!(sampler.selected(), Some(&(1..=5))));
+    /// assert!(matches!(selector.selected(), Some(&1 | &2 | &3)));
     /// ```
-    pub fn uniform_sampler<T>(&self) -> UniformSampler<C, T> {
-        UniformSampler {
+    pub fn uniform_selector<T>(&self) -> UniformSelector<C, T> {
+        UniformSelector {
             rng: self.split(),
             seen: 0,
+            selected: None,
+        }
+    }
+
+    /// Creates a new weighted selector that picks a random element from a stream of observed
+    /// elements with probability proportional to the positive finite weight returned by
+    /// `weight_fn`.
+    ///
+    /// Weights that are zero, negative, `NaN`, or infinite are ignored.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use randy::CellRng;
+    /// let rng = CellRng::new();
+    /// let mut selector = rng.weighted_selector(|value: &i32| *value as f64);
+    /// for value in [1, 2, 3] {
+    ///     selector.observe(value);
+    /// }
+    ///
+    /// assert!(matches!(selector.selected(), Some(&1 | &2 | &3)));
+    /// ```
+    pub fn weighted_selector<T, F>(&self, weight_fn: F) -> WeightedSelector<C, T, F> {
+        WeightedSelector {
+            rng: self.split(),
+            weight_fn,
+            total_weight: 0.0,
             selected: None,
         }
     }
@@ -556,15 +588,10 @@ where
 
 impl<'a, C: Core, T> ExactSizeIterator for ShuffleIter<'a, C, T> where usize: RandomRange<Rng<C>> {}
 
-impl<C: Core, T> UniformSampler<C, T>
+impl<C: Core, T> UniformSelector<C, T>
 where
     usize: RandomRange<Rng<C>>,
 {
-    /// Returns the selected element, consuming the sampler.
-    pub fn into_selected(self) -> Option<T> {
-        self.selected
-    }
-
     /// Observes the next element in the stream, selecting it with probability `1 / seen` if it is
     /// the `seen`-th element observed so far. This implements the reservoir sampling algorithm.
     pub fn observe(&mut self, element: T) {
@@ -578,6 +605,60 @@ where
     /// considered.
     pub fn selected(&self) -> Option<&T> {
         self.selected.as_ref()
+    }
+}
+
+impl<C: Core, T, F> WeightedSelector<C, T, F>
+where
+    F: FnMut(&T) -> f64,
+    f64: Random<Rng<C>>,
+{
+    /// Observes the next element in the stream, selecting it with probability proportional to its
+    /// weight among all positive finite weights seen so far.
+    pub fn observe(&mut self, element: T) {
+        let weight = (self.weight_fn)(&element);
+        if !weight.is_finite() || weight <= 0.0 {
+            return;
+        }
+
+        self.total_weight += weight;
+        if f64::random(&self.rng) * self.total_weight < weight {
+            self.selected = Some(element);
+        }
+    }
+
+    /// Returns a reference to the currently selected element, or `None` if no valid elements have
+    /// been considered.
+    pub fn selected(&self) -> Option<&T> {
+        self.selected.as_ref()
+    }
+}
+
+impl<C, T> Deref for UniformSelector<C, T> {
+    type Target = Option<T>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.selected
+    }
+}
+
+impl<C, T> From<UniformSelector<C, T>> for Option<T> {
+    fn from(selector: UniformSelector<C, T>) -> Self {
+        selector.selected
+    }
+}
+
+impl<C, T, F> Deref for WeightedSelector<C, T, F> {
+    type Target = Option<T>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.selected
+    }
+}
+
+impl<C, T, F> From<WeightedSelector<C, T, F>> for Option<T> {
+    fn from(selector: WeightedSelector<C, T, F>) -> Self {
+        selector.selected
     }
 }
 

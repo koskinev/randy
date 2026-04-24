@@ -491,7 +491,7 @@ fn atomic_rng_choose_where_is_deterministic_after_reseed() {
 #[test]
 fn rng_uniform_sampler_returns_none_until_observation() {
     let rng = randy::rng::CellRng::new();
-    let mut sampler = rng.uniform_sampler();
+    let mut sampler = rng.uniform_selector();
     let data = [10, 20, 30, 40];
 
     assert_eq!(sampler.selected(), None);
@@ -505,7 +505,7 @@ fn rng_uniform_sampler_returns_none_until_observation() {
 #[test]
 fn atomic_rng_uniform_sampler_returns_none_until_observation() {
     let rng = randy::rng::AtomicRng::new();
-    let mut sampler = rng.uniform_sampler();
+    let mut sampler = rng.uniform_selector();
     let data = [10, 20, 30, 40];
 
     assert_eq!(sampler.selected(), None);
@@ -523,7 +523,7 @@ fn rng_uniform_sampler_is_deterministic_after_reseed() {
 
     rng.reseed(2024);
     let left = {
-        let mut sampler = rng.uniform_sampler();
+        let mut sampler = rng.uniform_selector();
         for value in &data {
             sampler.observe(value);
         }
@@ -532,7 +532,7 @@ fn rng_uniform_sampler_is_deterministic_after_reseed() {
 
     rng.reseed(2024);
     let right = {
-        let mut sampler = rng.uniform_sampler();
+        let mut sampler = rng.uniform_selector();
         for value in &data {
             sampler.observe(value);
         }
@@ -549,7 +549,7 @@ fn atomic_rng_uniform_sampler_is_deterministic_after_reseed() {
 
     rng.reseed(2024);
     let left = {
-        let mut sampler = rng.uniform_sampler();
+        let mut sampler = rng.uniform_selector();
         for value in &data {
             sampler.observe(value);
         }
@@ -558,7 +558,7 @@ fn atomic_rng_uniform_sampler_is_deterministic_after_reseed() {
 
     rng.reseed(2024);
     let right = {
-        let mut sampler = rng.uniform_sampler();
+        let mut sampler = rng.uniform_selector();
         for value in &data {
             sampler.observe(value);
         }
@@ -578,7 +578,7 @@ fn rng_uniform_sampler_is_approximately_uniform() {
 
     rng.reseed(7);
     for _ in 0..SAMPLES {
-        let mut sampler = rng.uniform_sampler();
+        let mut sampler = rng.uniform_selector();
         for value in &data {
             sampler.observe(value);
         }
@@ -597,6 +597,204 @@ fn rng_uniform_sampler_is_approximately_uniform() {
         max - min < SAMPLES / 10,
         "selection is too imbalanced: {counts:?}"
     );
+}
+
+#[test]
+fn rng_weighted_selector_returns_none_until_valid_observation() {
+    let rng = randy::rng::CellRng::new();
+    let mut selector = rng.weighted_selector(|value: &&i32| match **value {
+        10 => 0.0,
+        20 => f64::NAN,
+        30 => -1.0,
+        _ => 2.0,
+    });
+    let data = [10, 20, 30, 40];
+
+    assert_eq!(selector.selected(), None);
+
+    selector.observe(&data[0]);
+    selector.observe(&data[1]);
+    selector.observe(&data[2]);
+    assert_eq!(selector.selected(), None);
+
+    selector.observe(&data[3]);
+    assert_eq!(selector.selected().copied(), Some(&40));
+}
+
+#[test]
+fn atomic_rng_weighted_selector_returns_none_until_valid_observation() {
+    let rng = randy::rng::AtomicRng::new();
+    let mut selector = rng.weighted_selector(|value: &&i32| match **value {
+        10 => f64::NEG_INFINITY,
+        20 => 0.0,
+        30 => -10.0,
+        _ => 3.0,
+    });
+    let data = [10, 20, 30, 40];
+
+    assert_eq!(selector.selected(), None);
+
+    selector.observe(&data[0]);
+    selector.observe(&data[1]);
+    selector.observe(&data[2]);
+    assert_eq!(selector.selected(), None);
+
+    selector.observe(&data[3]);
+    assert_eq!(selector.selected().copied(), Some(&40));
+}
+
+#[test]
+fn rng_weighted_selector_is_deterministic_after_reseed() {
+    let rng = randy::rng::CellRng::new();
+    let data = [10, 20, 30, 40, 50, 60];
+
+    rng.reseed(2024);
+    let left = {
+        let mut selector = rng.weighted_selector(|value: &&i32| match **value {
+            10 => 1.0,
+            20 => 3.0,
+            30 => 0.0,
+            40 => 6.0,
+            50 => f64::NAN,
+            _ => 2.0,
+        });
+        for value in &data {
+            selector.observe(value);
+        }
+        selector.selected().copied()
+    };
+
+    rng.reseed(2024);
+    let right = {
+        let mut selector = rng.weighted_selector(|value: &&i32| match **value {
+            10 => 1.0,
+            20 => 3.0,
+            30 => 0.0,
+            40 => 6.0,
+            50 => f64::NAN,
+            _ => 2.0,
+        });
+        for value in &data {
+            selector.observe(value);
+        }
+        selector.selected().copied()
+    };
+
+    assert_eq!(left, right);
+}
+
+#[test]
+fn atomic_rng_weighted_selector_is_deterministic_after_reseed() {
+    let rng = randy::rng::AtomicRng::new();
+    let data = [10, 20, 30, 40, 50, 60];
+
+    rng.reseed(2024);
+    let left = {
+        let mut selector = rng.weighted_selector(|value: &&i32| match **value {
+            10 => 1.0,
+            20 => 3.0,
+            30 => 0.0,
+            40 => 6.0,
+            50 => f64::INFINITY,
+            _ => 2.0,
+        });
+        for value in &data {
+            selector.observe(value);
+        }
+        selector.selected().copied()
+    };
+
+    rng.reseed(2024);
+    let right = {
+        let mut selector = rng.weighted_selector(|value: &&i32| match **value {
+            10 => 1.0,
+            20 => 3.0,
+            30 => 0.0,
+            40 => 6.0,
+            50 => f64::INFINITY,
+            _ => 2.0,
+        });
+        for value in &data {
+            selector.observe(value);
+        }
+        selector.selected().copied()
+    };
+
+    assert_eq!(left, right);
+}
+
+#[test]
+fn rng_weighted_selector_is_approximately_weighted() {
+    const SAMPLES: usize = 60_000;
+
+    let rng = randy::rng::CellRng::new();
+    let data = [10, 20, 30];
+    let mut counts = [0usize; 3];
+
+    rng.reseed(7);
+    for _ in 0..SAMPLES {
+        let mut selector = rng.weighted_selector(|value: &&i32| match **value {
+            10 => 1.0,
+            20 => 2.0,
+            30 => 7.0,
+            _ => unreachable!(),
+        });
+        for value in &data {
+            selector.observe(value);
+        }
+
+        match selector.selected().copied() {
+            Some(10) => counts[0] += 1,
+            Some(20) => counts[1] += 1,
+            Some(30) => counts[2] += 1,
+            other => panic!("unexpected selection: {other:?}"),
+        }
+    }
+
+    let expected = [SAMPLES / 10, SAMPLES / 5, SAMPLES * 7 / 10];
+    for (count, expected) in counts.into_iter().zip(expected) {
+        assert!(
+            count.abs_diff(expected) < expected / 14,
+            "selection is too imbalanced: {counts:?}, expected near {expected}"
+        );
+    }
+}
+
+#[test]
+fn rng_weighted_selector_skips_invalid_weights_in_mixed_stream() {
+    const SAMPLES: usize = 36_000;
+
+    let rng = randy::rng::CellRng::new();
+    let data = [10, 20, 30];
+    let mut counts = [0usize; 2];
+
+    rng.reseed(9);
+    for _ in 0..SAMPLES {
+        let mut selector = rng.weighted_selector(|value: &&i32| match **value {
+            10 => 1.0,
+            20 => f64::NAN,
+            30 => 2.0,
+            _ => unreachable!(),
+        });
+        for value in &data {
+            selector.observe(value);
+        }
+
+        match selector.selected().copied() {
+            Some(10) => counts[0] += 1,
+            Some(20) => panic!("invalid-weight element should never be selected"),
+            Some(30) => counts[1] += 1,
+            other => panic!("unexpected selection: {other:?}"),
+        }
+    }
+
+    let expected = [SAMPLES / 3, SAMPLES * 2 / 3];
+    for (count, expected) in counts.into_iter().zip(expected) {
+        assert!(
+            count.abs_diff(expected) < expected / 12,
+            "selection is too imbalanced: {counts:?}, expected near {expected}"
+        );
+    }
 }
 
 #[test]

@@ -44,4 +44,6 @@ mod tests;
 
 mod rng;
 
-pub use rng::{shuffle, AtomicRng, CellRng, Core, Rng, ShuffleIter, UniformSampler};
+pub use rng::{
+	shuffle, AtomicRng, CellRng, Core, Rng, ShuffleIter, UniformSelector, WeightedSelector,
+};
