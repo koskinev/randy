@@ -1,3 +1,4 @@
+use core::f64;
 use std::{
     cell::Cell,
     ops::{Bound, Deref, RangeBounds},
@@ -251,16 +252,10 @@ impl<C: Core> Rng<C> {
     }
 
     /// Selects an element from `data` according to the softmax distribution induced by `f` and
-    /// temperature `t`. Ignores non-finite values returned by `f`. Values returned from `f` are
-    /// cached to improve performance when `f` is expensive to compute.
-    ///
-    /// Edge cases:
-    /// - If the slice is empty, or if all values returned by `f` are non-finite, returns `None`
-    /// - If the temperature is less or equal to zero, infinite or `NaN`, returns the maximum
-    ///   element by `f`.
-    ///
-    /// This implementation computes the "safe" softmax by subtracting the maximum value from all
-    /// elements before exponentiating, which helps prevent overflow.
+    /// temperature `t`. Ignores non-finite values returned by `f`.  If the slice is empty, or if
+    /// all values returned by `f` are non-finite, returns `None`. The temperature is clamped to the
+    /// range `(0, f64::INFINITY]`. `NaN` and non-positive temperatures are treated as
+    /// `f64::MIN_POSITIVE`.
     ///
     /// # Example
     /// ```rust
@@ -270,62 +265,35 @@ impl<C: Core> Rng<C> {
     /// let picked = rng.choose_softmax(&data, |s| s.len() as f64, 0.5);
     /// assert!(picked.is_some());
     /// ```
-    pub fn choose_softmax<'a, T, F>(&self, data: &'a [T], mut f: F, t: f64) -> Option<&'a T>
+    pub fn choose_softmax<'a, T, F>(&self, data: &'a [T], mut f: F, mut t: f64) -> Option<&'a T>
     where
         F: FnMut(&T) -> f64,
-        usize: Random<Self>,
+        f64: Random<Self>,
     {
         if data.is_empty() {
             return None;
         }
 
-        // Evaluate keys once to avoid inconsistent or expensive re-computation.
-        let mut values = Vec::with_capacity(data.len());
+        t = t.max(f64::MIN_POSITIVE);
+        let mut selected = None;
+        let mut max = f64::NEG_INFINITY;
 
-        // Find the maximum finite value for numerical stability and track the index.
-        let (mut index, mut max) = (0, f64::NEG_INFINITY);
-        let mut any_finite = false;
-        for (i, elem) in data.iter().enumerate() {
-            let v = f(elem);
-            if v.is_finite() {
-                any_finite = true;
-                values.push(v);
-                if v > max {
-                    (index, max) = (i, v);
-                }
+        for value in data {
+            let score = f(value);
+            if !score.is_finite() {
+                continue;
+            }
+
+            // Gumbel(0, 1) noise
+            let u = f64::random(self).clamp(f64::MIN_POSITIVE, 1.0);
+            let g = -(-u.ln()).ln();
+            let key = score + t * g;
+            if key > max {
+                max = key;
+                selected = Some(value);
             }
         }
-
-        // Edge cases:
-        // - No finite values: return the first index (the above code ensures `index == 0`).
-        // - Non-positive or non-finite temperature: return the index of the maximum element.
-        if !any_finite || t <= 0.0 || !t.is_finite() {
-            return data.get(index);
-        }
-
-        // Compute the normalization constant, skipping non-finite inputs.
-        let mut sum = 0.0f64;
-        for v in values.iter_mut() {
-            if v.is_finite() {
-                *v = ((*v - max) / t).exp();
-                sum += *v;
-            }
-        }
-        if sum <= 0.0 || !sum.is_finite() {
-            return None;
-        }
-
-        // Draw from the distribution using a single pass.
-        let mut threshold = f64::random(self) * sum;
-        for (index, &weight) in values.iter().enumerate() {
-            if weight.is_finite() {
-                threshold -= weight;
-                if threshold <= 0.0 {
-                    return data.get(index);
-                }
-            }
-        }
-        data.get(index)
+        selected
     }
 
     /// Chooses a random element from the slice `data` with probability proportional to the
@@ -348,7 +316,7 @@ impl<C: Core> Rng<C> {
         F: FnMut(&T) -> f64,
         f64: Random<Self>,
     {
-        // We use Kahan-style summation to prevent floating-point precision loss
+        // We use Kahan/Neumaier-style summation to prevent floating-point precision loss
         // when accumulating weights over very large slices.
 
         let mut chosen = None;
