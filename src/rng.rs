@@ -114,7 +114,9 @@ pub struct WeightedSelector<C, T, F> {
     /// Computes the weight for each observed element.
     weight_fn: F,
     /// The total weight of all participating elements observed so far.
-    total_weight: f64,
+    sum: f64,
+    /// The correction term for Kahan summation.
+    c: f64,
     /// The currently selected element.
     selected: Option<T>,
 }
@@ -229,10 +231,10 @@ impl<C: Core> Rng<C> {
         if data.is_empty() {
             return None;
         }
-    
+
         // Evaluate keys once to avoid inconsistent or expensive re-computation.
         let mut values = Vec::with_capacity(data.len());
-    
+
         // Find the maximum finite value for numerical stability and track the index.
         let (mut index, mut max) = (0, f64::NEG_INFINITY);
         let mut any_finite = false;
@@ -246,14 +248,14 @@ impl<C: Core> Rng<C> {
                 }
             }
         }
-    
+
         // Edge cases:
         // - No finite values: return the first index (the above code ensures `index == 0`).
         // - Non-positive or non-finite temperature: return the index of the maximum element.
         if !any_finite || t <= 0.0 || !t.is_finite() {
             return data.get(index);
         }
-    
+
         // Compute the normalization constant, skipping non-finite inputs.
         let mut sum = 0.0f64;
         for v in values.iter_mut() {
@@ -265,7 +267,7 @@ impl<C: Core> Rng<C> {
         if sum <= 0.0 || !sum.is_finite() {
             return None;
         }
-    
+
         // Draw from the distribution using a single pass.
         let mut threshold = f64::random(self) * sum;
         for (index, &weight) in values.iter().enumerate() {
@@ -294,26 +296,41 @@ impl<C: Core> Rng<C> {
     /// let picked = rng.choose_weighted(&data, |value| *value as f64);
     /// assert!(matches!(picked, Some(&1 | &2 | &3)));
     /// ```
-    pub fn choose_weighted<'a, T, F>(&'a self, data: &'a [T], mut weight_fn: F) -> Option<&'a T>
+    pub fn choose_weighted<'a, T, F>(&self, data: &'a [T], mut weight_fn: F) -> Option<&'a T>
     where
         F: FnMut(&T) -> f64,
         f64: Random<Self>,
     {
+        // We use Kahan-style summation to prevent floating-point precision loss
+        // when accumulating weights over very large slices.
+
         let mut chosen = None;
-        let mut total_weight = 0.0;
-    
+        let mut sum = 0.0;
+        let mut c = 0.0; // Running compensation for lost low-order bits
+
         for value in data {
             let weight = weight_fn(value);
             if !weight.is_finite() || weight <= 0.0 {
                 continue;
             }
-    
-            total_weight += weight;
-            if f64::random(self) * total_weight < weight {
+
+            let t = sum + weight;
+            c += if sum >= weight {
+                (sum - t) + weight
+            } else {
+                (weight - t) + sum
+            };
+            sum = t;
+
+            // The mathematically accurate running total
+            let total = sum + c;
+
+            // Reservoir sampling step
+            if f64::random(self) * total < weight {
                 chosen = Some(value);
             }
         }
-    
+
         chosen
     }
 
@@ -331,7 +348,7 @@ impl<C: Core> Rng<C> {
     /// let value = rng.choose_where(&data, |value| value % 2 == 0);
     /// assert!(matches!(value, Some(&2) | Some(&4)));
     /// ```
-    pub fn choose_where<'a, T, F>(&'a self, data: &'a [T], mut predicate: F) -> Option<&'a T>
+    pub fn choose_where<'a, T, F>(&self, data: &'a [T], mut predicate: F) -> Option<&'a T>
     where
         F: FnMut(&T) -> bool,
     {
@@ -570,7 +587,8 @@ impl<C: Core> Rng<C> {
         WeightedSelector {
             rng: self.split(),
             weight_fn,
-            total_weight: 0.0,
+            sum: 0.0,
+            c: 0.0,
             selected: None,
         }
     }
@@ -665,15 +683,24 @@ where
             return;
         }
 
-        self.total_weight += weight;
-        if f64::random(&self.rng) * self.total_weight < weight {
+        let t = self.sum + weight;
+        self.c += if self.sum >= weight {
+            (self.sum - t) + weight
+        } else {
+            (weight - t) + self.sum
+        };
+        self.sum = t;
+
+        let total = self.sum + self.c;
+        if f64::random(&self.rng) * total < weight {
             self.selected = Some(element);
         }
     }
 
     /// Resets the selector to its initial state, forgetting all previously observed elements.
     pub fn reset(&mut self) {
-        self.total_weight = 0.0;
+        self.sum = 0.0;
+        self.c = 0.0;
         self.selected = None;
     }
 
