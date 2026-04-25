@@ -1,16 +1,12 @@
-use std::{
-    cell::Cell,
-    collections::HashSet,
-    sync::atomic::{AtomicU64, Ordering},
-};
+use std::{cell::Cell, collections::HashSet};
 
-use crate as randy;
-use crate::rng::{wyhash, CellRng, INCREMENT};
+use crate::{self as randy, rng::Random, A64Rng};
+use crate::{rng::C64Rng, C128Rng};
 
 #[test]
 fn random_range() {
     const ITERS: usize = 100_000;
-    let rng = CellRng::new();
+    let rng = C64Rng::new();
 
     let values: HashSet<u8> = (0..ITERS).map(|_| rng.bounded(..=128)).collect();
     assert_eq!(values.len(), 129);
@@ -31,13 +27,13 @@ fn random_range() {
 
 #[test]
 fn readme_example() {
-    use randy::AtomicRng; // The atomic RNG type
+    use randy::A64Rng; // The atomic RNG type
     use std::thread;
 
     // A function that takes a reference to the RNG
     //
     //   look mom, not &mut 👇!
-    fn find_answer(thoughts: &AtomicRng) {
+    fn find_answer(thoughts: &A64Rng) {
         match thoughts.random() {
             42 => println!("Got 42! The answer!"),
             x => println!("Got {x}, not the answer"),
@@ -46,7 +42,7 @@ fn readme_example() {
 
     // A function that shares an RNG across threads
     fn think() {
-        let rng = AtomicRng::new();
+        let rng = A64Rng::new();
         thread::scope(|s| {
             (0..4).for_each(|_| {
                 s.spawn(|| find_answer(&rng));
@@ -58,7 +54,7 @@ fn readme_example() {
 
 #[test]
 fn rng_random_numbers() {
-    let rng = randy::rng::CellRng::new();
+    let rng = randy::rng::C64Rng::new();
     let a: u32 = rng.random();
     let b: u32 = rng.random();
     // Verify that successive calls generate different numbers.
@@ -67,7 +63,7 @@ fn rng_random_numbers() {
 
 #[test]
 fn atomic_rng_random_numbers() {
-    let atomic_rng = randy::rng::AtomicRng::new();
+    let atomic_rng = randy::rng::A64Rng::new();
     let a: u32 = atomic_rng.random();
     let b: u32 = atomic_rng.random();
     // Verify that successive calls generate different numbers.
@@ -76,7 +72,7 @@ fn atomic_rng_random_numbers() {
 
 #[test]
 fn rng_bounded_range() {
-    let rng = randy::rng::CellRng::new();
+    let rng = randy::rng::C64Rng::new();
     for _ in 0..1000 {
         let x: u32 = rng.bounded(50..60);
         assert!(
@@ -88,7 +84,7 @@ fn rng_bounded_range() {
 
 #[test]
 fn atomic_rng_bounded_range() {
-    let atomic_rng = randy::rng::AtomicRng::new();
+    let atomic_rng = randy::rng::A64Rng::new();
     for _ in 0..1000 {
         let x: u32 = atomic_rng.bounded(100..110);
         assert!(
@@ -103,7 +99,7 @@ fn floating_point_bounded_ranges() {
     const ITERS: usize = 1000;
 
     // Test f32 with Rng
-    let rng = randy::rng::CellRng::new();
+    let rng = randy::rng::C64Rng::new();
 
     for _ in 0..ITERS {
         // Generate random bounds
@@ -149,7 +145,7 @@ fn floating_point_bounded_ranges() {
     }
 
     // Test f32 with AtomicRng
-    let atomic_rng = randy::rng::AtomicRng::new();
+    let atomic_rng = randy::rng::A64Rng::new();
 
     for _ in 0..ITERS {
         // Generate random bounds
@@ -197,7 +193,7 @@ fn floating_point_bounded_ranges() {
 
 #[test]
 fn rng_reseed() {
-    let rng = randy::rng::CellRng::new();
+    let rng = randy::rng::C64Rng::new();
     rng.reseed(42);
     let val1: u32 = rng.random();
     rng.reseed(42);
@@ -210,7 +206,7 @@ fn rng_reseed() {
 
 #[test]
 fn atomic_rng_reseed() {
-    let rng = randy::rng::AtomicRng::new();
+    let rng = randy::rng::A64Rng::new();
     rng.reseed(42);
     let val1: u32 = rng.random();
     rng.reseed(42);
@@ -223,7 +219,7 @@ fn atomic_rng_reseed() {
 
 #[test]
 fn atomic_rng_iter() {
-    let atomic_rng = randy::rng::AtomicRng::new();
+    let atomic_rng = randy::rng::A64Rng::new();
     let numbers: Vec<u32> = atomic_rng.iter().take(10).collect();
     assert_eq!(numbers.len(), 10);
     // Verify that not all numbers are equal.
@@ -235,7 +231,7 @@ fn atomic_rng_iter() {
 
 #[test]
 fn rng_iter() {
-    let rng = randy::rng::CellRng::new();
+    let rng = randy::rng::C64Rng::new();
     let numbers: Vec<u32> = rng.iter().take(10).collect();
     assert_eq!(numbers.len(), 10);
     // Verify that not all numbers are equal.
@@ -247,7 +243,7 @@ fn rng_iter() {
 
 #[test]
 fn rng_shuffle_iter_exact_size_and_mutation() {
-    let rng = randy::rng::CellRng::new();
+    let rng = randy::rng::C64Rng::new();
     rng.reseed(4321);
 
     let mut data = [0_u8, 1, 2, 3];
@@ -271,7 +267,7 @@ fn rng_shuffle_iter_exact_size_and_mutation() {
 
 #[test]
 fn atomic_rng_shuffle_iter_is_deterministic_after_reseed() {
-    let rng = randy::rng::AtomicRng::new();
+    let rng = randy::rng::A64Rng::new();
 
     let mut left = [10, 20, 30, 40, 50];
     let mut right = [10, 20, 30, 40, 50];
@@ -287,7 +283,7 @@ fn atomic_rng_shuffle_iter_is_deterministic_after_reseed() {
 
 #[test]
 fn rng_distinct_bounded() {
-    let rng = randy::rng::CellRng::new();
+    let rng = randy::rng::C64Rng::new();
     let values: [u8; 16] = rng.distinct_bounded(0..64);
     assert!(values.iter().all(|&v| (0..64).contains(&v)));
     for i in 0..values.len() {
@@ -299,7 +295,7 @@ fn rng_distinct_bounded() {
 
 #[test]
 fn atomic_rng_distinct_bounded() {
-    let rng = randy::rng::AtomicRng::new();
+    let rng = randy::rng::A64Rng::new();
     let values: [u8; 16] = rng.distinct_bounded(0..64);
     assert!(values.iter().all(|&v| (0..64).contains(&v)));
     for i in 0..values.len() {
@@ -311,7 +307,7 @@ fn atomic_rng_distinct_bounded() {
 
 #[test]
 fn rng_choose_iter_returns_none_for_empty_iterator() {
-    let rng = randy::rng::CellRng::new();
+    let rng = randy::rng::C64Rng::new();
     let empty = std::iter::empty::<u8>();
 
     assert_eq!(rng.choose_from_iter(empty), None);
@@ -319,7 +315,7 @@ fn rng_choose_iter_returns_none_for_empty_iterator() {
 
 #[test]
 fn atomic_rng_choose_iter_returns_none_for_empty_iterator() {
-    let rng = randy::rng::AtomicRng::new();
+    let rng = randy::rng::A64Rng::new();
     let empty = std::iter::empty::<u8>();
 
     assert_eq!(rng.choose_from_iter(empty), None);
@@ -327,7 +323,7 @@ fn atomic_rng_choose_iter_returns_none_for_empty_iterator() {
 
 #[test]
 fn rng_choose_iter_returns_value_from_iterator() {
-    let rng = randy::rng::CellRng::new();
+    let rng = randy::rng::C64Rng::new();
 
     for _ in 0..64 {
         let picked = rng
@@ -343,7 +339,7 @@ fn rng_choose_iter_returns_value_from_iterator() {
 
 #[test]
 fn atomic_rng_choose_iter_returns_value_from_iterator() {
-    let rng = randy::rng::AtomicRng::new();
+    let rng = randy::rng::A64Rng::new();
 
     for _ in 0..64 {
         let picked = rng
@@ -359,7 +355,7 @@ fn atomic_rng_choose_iter_returns_value_from_iterator() {
 
 #[test]
 fn rng_choose_iter_is_deterministic_after_reseed() {
-    let rng = randy::rng::CellRng::new();
+    let rng = randy::rng::C64Rng::new();
 
     rng.reseed(2024);
     let left: Vec<_> = (0..16)
@@ -376,7 +372,7 @@ fn rng_choose_iter_is_deterministic_after_reseed() {
 
 #[test]
 fn atomic_rng_choose_iter_is_deterministic_after_reseed() {
-    let rng = randy::rng::AtomicRng::new();
+    let rng = randy::rng::A64Rng::new();
 
     rng.reseed(2024);
     let left: Vec<_> = (0..16)
@@ -395,7 +391,7 @@ fn atomic_rng_choose_iter_is_deterministic_after_reseed() {
 fn rng_choose_iter_is_approximately_uniform() {
     const SAMPLES: usize = 24_000;
 
-    let rng = randy::rng::CellRng::new();
+    let rng = randy::rng::C64Rng::new();
     let mut counts = [0usize; 3];
 
     rng.reseed(7);
@@ -418,7 +414,7 @@ fn rng_choose_iter_is_approximately_uniform() {
 
 #[test]
 fn rng_choose_where_returns_none_for_empty_or_missing_match() {
-    let rng = randy::rng::CellRng::new();
+    let rng = randy::rng::C64Rng::new();
     let empty: [u8; 0] = [];
     let data = [1, 3, 5, 7];
 
@@ -428,7 +424,7 @@ fn rng_choose_where_returns_none_for_empty_or_missing_match() {
 
 #[test]
 fn rng_choose_where_evaluates_each_element_once() {
-    let rng = randy::rng::CellRng::new();
+    let rng = randy::rng::C64Rng::new();
     let data = [1, 3, 4, 5];
     let evaluations = Cell::new(0);
 
@@ -443,7 +439,7 @@ fn rng_choose_where_evaluates_each_element_once() {
 
 #[test]
 fn rng_choose_where_selects_only_matching_elements() {
-    let rng = randy::rng::CellRng::new();
+    let rng = randy::rng::C64Rng::new();
     let data = [1, 2, 3, 4, 5, 6];
 
     for _ in 0..256 {
@@ -454,7 +450,7 @@ fn rng_choose_where_selects_only_matching_elements() {
 
 #[test]
 fn rng_choose_where_is_deterministic_after_reseed() {
-    let rng = randy::rng::CellRng::new();
+    let rng = randy::rng::C64Rng::new();
     let data = [10, 11, 12, 13, 14, 15];
 
     rng.reseed(2024);
@@ -472,7 +468,7 @@ fn rng_choose_where_is_deterministic_after_reseed() {
 
 #[test]
 fn atomic_rng_choose_where_is_deterministic_after_reseed() {
-    let rng = randy::rng::AtomicRng::new();
+    let rng = randy::rng::A64Rng::new();
     let data = [10, 11, 12, 13, 14, 15];
 
     rng.reseed(2024);
@@ -490,7 +486,7 @@ fn atomic_rng_choose_where_is_deterministic_after_reseed() {
 
 #[test]
 fn rng_choose_weighted_returns_none_for_empty_or_invalid_weights() {
-    let rng = randy::rng::CellRng::new();
+    let rng = randy::rng::C64Rng::new();
     let empty: [i32; 0] = [];
     let data = [10, 20, 30, 40];
 
@@ -508,13 +504,17 @@ fn rng_choose_weighted_returns_none_for_empty_or_invalid_weights() {
 
 #[test]
 fn rng_choose_weighted_evaluates_each_element_once() {
-    let rng = randy::rng::CellRng::new();
+    let rng = randy::rng::C64Rng::new();
     let data = [1, 3, 4, 5];
     let evaluations = Cell::new(0);
 
     let picked = rng.choose_weighted(&data, |value| {
         evaluations.set(evaluations.get() + 1);
-        if value % 2 == 0 { 1.0 } else { 0.0 }
+        if value % 2 == 0 {
+            1.0
+        } else {
+            0.0
+        }
     });
 
     assert_eq!(picked, Some(&4));
@@ -523,7 +523,7 @@ fn rng_choose_weighted_evaluates_each_element_once() {
 
 #[test]
 fn rng_choose_weighted_selects_only_positive_finite_weights() {
-    let rng = randy::rng::CellRng::new();
+    let rng = randy::rng::C64Rng::new();
     let data = [1, 2, 3, 4, 5, 6];
 
     for _ in 0..256 {
@@ -538,7 +538,7 @@ fn rng_choose_weighted_selects_only_positive_finite_weights() {
 
 #[test]
 fn rng_choose_weighted_is_deterministic_after_reseed() {
-    let rng = randy::rng::CellRng::new();
+    let rng = randy::rng::C64Rng::new();
     let data = [10, 20, 30, 40, 50, 60];
 
     rng.reseed(2024);
@@ -576,7 +576,7 @@ fn rng_choose_weighted_is_deterministic_after_reseed() {
 
 #[test]
 fn atomic_rng_choose_weighted_is_deterministic_after_reseed() {
-    let rng = randy::rng::AtomicRng::new();
+    let rng = randy::rng::A64Rng::new();
     let data = [10, 20, 30, 40, 50, 60];
 
     rng.reseed(2024);
@@ -616,7 +616,7 @@ fn atomic_rng_choose_weighted_is_deterministic_after_reseed() {
 fn rng_choose_weighted_is_approximately_weighted() {
     const SAMPLES: usize = 60_000;
 
-    let rng = randy::rng::CellRng::new();
+    let rng = randy::rng::C64Rng::new();
     let data = [10, 20, 30];
     let mut counts = [0usize; 3];
 
@@ -648,7 +648,7 @@ fn rng_choose_weighted_is_approximately_weighted() {
 fn rng_choose_weighted_skips_invalid_weights_in_mixed_slice() {
     const SAMPLES: usize = 36_000;
 
-    let rng = randy::rng::CellRng::new();
+    let rng = randy::rng::C64Rng::new();
     let data = [10, 20, 30];
     let mut counts = [0usize; 2];
 
@@ -678,7 +678,7 @@ fn rng_choose_weighted_skips_invalid_weights_in_mixed_slice() {
 
 #[test]
 fn rng_uniform_sampler_returns_none_until_observation() {
-    let rng = randy::rng::CellRng::new();
+    let rng = randy::rng::C64Rng::new();
     let mut sampler = rng.uniform_selector();
     let data = [10, 20, 30, 40];
 
@@ -692,7 +692,7 @@ fn rng_uniform_sampler_returns_none_until_observation() {
 
 #[test]
 fn atomic_rng_uniform_sampler_returns_none_until_observation() {
-    let rng = randy::rng::AtomicRng::new();
+    let rng = randy::rng::A64Rng::new();
     let mut sampler = rng.uniform_selector();
     let data = [10, 20, 30, 40];
 
@@ -706,7 +706,7 @@ fn atomic_rng_uniform_sampler_returns_none_until_observation() {
 
 #[test]
 fn rng_uniform_sampler_is_deterministic_after_reseed() {
-    let rng = randy::rng::CellRng::new();
+    let rng = randy::rng::C64Rng::new();
     let data = [10, 20, 30, 40, 50, 60];
 
     rng.reseed(2024);
@@ -732,7 +732,7 @@ fn rng_uniform_sampler_is_deterministic_after_reseed() {
 
 #[test]
 fn atomic_rng_uniform_sampler_is_deterministic_after_reseed() {
-    let rng = randy::rng::AtomicRng::new();
+    let rng = randy::rng::A64Rng::new();
     let data = [10, 20, 30, 40, 50, 60];
 
     rng.reseed(2024);
@@ -760,7 +760,7 @@ fn atomic_rng_uniform_sampler_is_deterministic_after_reseed() {
 fn rng_uniform_sampler_is_approximately_uniform() {
     const SAMPLES: usize = 24_000;
 
-    let rng = randy::rng::CellRng::new();
+    let rng = randy::rng::C64Rng::new();
     let data = [10, 20, 30];
     let mut counts = [0usize; 3];
 
@@ -789,7 +789,7 @@ fn rng_uniform_sampler_is_approximately_uniform() {
 
 #[test]
 fn rng_weighted_selector_returns_none_until_valid_observation() {
-    let rng = randy::rng::CellRng::new();
+    let rng = randy::rng::C64Rng::new();
     let mut selector = rng.weighted_selector(|value: &&i32| match **value {
         10 => 0.0,
         20 => f64::NAN,
@@ -811,7 +811,7 @@ fn rng_weighted_selector_returns_none_until_valid_observation() {
 
 #[test]
 fn atomic_rng_weighted_selector_returns_none_until_valid_observation() {
-    let rng = randy::rng::AtomicRng::new();
+    let rng = randy::rng::A64Rng::new();
     let mut selector = rng.weighted_selector(|value: &&i32| match **value {
         10 => f64::NEG_INFINITY,
         20 => 0.0,
@@ -833,7 +833,7 @@ fn atomic_rng_weighted_selector_returns_none_until_valid_observation() {
 
 #[test]
 fn rng_weighted_selector_is_deterministic_after_reseed() {
-    let rng = randy::rng::CellRng::new();
+    let rng = randy::rng::C64Rng::new();
     let data = [10, 20, 30, 40, 50, 60];
 
     rng.reseed(2024);
@@ -873,7 +873,7 @@ fn rng_weighted_selector_is_deterministic_after_reseed() {
 
 #[test]
 fn atomic_rng_weighted_selector_is_deterministic_after_reseed() {
-    let rng = randy::rng::AtomicRng::new();
+    let rng = randy::rng::A64Rng::new();
     let data = [10, 20, 30, 40, 50, 60];
 
     rng.reseed(2024);
@@ -915,7 +915,7 @@ fn atomic_rng_weighted_selector_is_deterministic_after_reseed() {
 fn rng_weighted_selector_is_approximately_weighted() {
     const SAMPLES: usize = 60_000;
 
-    let rng = randy::rng::CellRng::new();
+    let rng = randy::rng::C64Rng::new();
     let data = [10, 20, 30];
     let mut counts = [0usize; 3];
 
@@ -952,7 +952,7 @@ fn rng_weighted_selector_is_approximately_weighted() {
 fn rng_weighted_selector_skips_invalid_weights_in_mixed_stream() {
     const SAMPLES: usize = 36_000;
 
-    let rng = randy::rng::CellRng::new();
+    let rng = randy::rng::C64Rng::new();
     let data = [10, 20, 30];
     let mut counts = [0usize; 2];
 
@@ -989,7 +989,7 @@ fn rng_weighted_selector_skips_invalid_weights_in_mixed_stream() {
 fn rng_choose_where_is_approximately_uniform() {
     const SAMPLES: usize = 24_000;
 
-    let rng = randy::rng::CellRng::new();
+    let rng = randy::rng::C64Rng::new();
     let data = [10, 20, 30, 41, 51];
     let mut counts = [0usize; 3];
 
@@ -1013,7 +1013,7 @@ fn rng_choose_where_is_approximately_uniform() {
 
 #[test]
 fn rng_choose_softmax() {
-    let rng = randy::rng::CellRng::new();
+    let rng = randy::rng::C64Rng::new();
     let data = ["a", "bb", "ccc", "dddd"];
 
     // When temperature <= 0, should return the max element by f.
@@ -1027,7 +1027,7 @@ fn rng_choose_softmax() {
 
 #[test]
 fn atomic_rng_choose_softmax() {
-    let rng = randy::rng::AtomicRng::new();
+    let rng = randy::rng::A64Rng::new();
     let data = ["a", "bb", "ccc", "dddd"];
 
     // When temperature <= 0, should return the max element by f.
@@ -1042,79 +1042,39 @@ fn atomic_rng_choose_softmax() {
 #[ignore]
 #[test]
 fn bench() {
-    // Benchmark the performance of atomic vs. normal RNG state updates.
+    // Benchmarks the RNG throughput
     // Run with `cargo test bench --release -- --ignored --nocapture`
-    use std::time::Instant;
+    use std::time::{Duration, Instant};
 
     const BUFFER_SIZE: usize = 1024;
     const ITERS: usize = 1_000_000;
 
-    let (atomic, mut mutable, cell) = (AtomicU64::new(0), 0, Cell::new(0));
-    let mut buffers = [[0; BUFFER_SIZE]; 3];
-    let mut durs = [0, 0, 0];
+    let atomic = A64Rng::new();
+    let cell64 = C64Rng::new();
+    let cell128 = C128Rng::new();
 
-    #[inline]
-    fn increment_a(state: &AtomicU64) -> u64 {
-        state.fetch_add(INCREMENT, Ordering::Relaxed)
-    }
-
-    #[inline]
-    fn increment_b(state: &mut u64) -> u64 {
-        let old_state = *state;
-        *state = state.wrapping_add(INCREMENT);
-        old_state
-    }
-
-    #[inline]
-    fn increment_c(state: &Cell<u64>) -> u64 {
-        let old_state = state.get();
-        state.set(old_state.wrapping_add(INCREMENT));
-        old_state
-    }
-
-    for _ in 0..ITERS {
-        // Interleave the methods to avoid biasing the results.
-        let mut order: [_; 3] = std::array::from_fn(|i| (i, buffers[0][i]));
-        order.sort_by_key(|&(_, x)| x);
-        for (index, _) in order {
-            match index {
-                0 => {
-                    let start = Instant::now();
-                    for elem in buffers[0].iter_mut() {
-                        *elem = wyhash(increment_a(&atomic));
-                    }
-                    durs[0] += start.elapsed().as_nanos();
-                }
-                1 => {
-                    let start = Instant::now();
-                    for elem in buffers[1].iter_mut() {
-                        *elem = wyhash(increment_b(&mut mutable));
-                    }
-                    durs[1] += start.elapsed().as_nanos();
-                }
-                2 => {
-                    let start = Instant::now();
-                    for elem in buffers[2].iter_mut() {
-                        *elem = wyhash(increment_c(&cell));
-                    }
-                    durs[2] += start.elapsed().as_nanos();
-                }
-                _ => unreachable!(),
+    fn bench<R>(rng: &R) -> u128
+    where
+        u64: Random<R>,
+    {
+        let mut buffer = [0; BUFFER_SIZE];
+        let mut elapsed = Duration::ZERO;
+        for _ in 0..ITERS {
+            let start = Instant::now();
+            for elem in buffer.iter_mut() {
+                *elem = u64::random(rng);
             }
+            elapsed += start.elapsed();
         }
+        elapsed.as_nanos()
     }
 
-    let gigs = ((ITERS * std::mem::size_of_val(&buffers[0])) as f64) / ((1 << 30) as f64);
+    let durs = [bench(&atomic), bench(&cell64), bench(&cell128)];
+    let gigs = ((ITERS * BUFFER_SIZE * std::mem::size_of_val(&0_u64)) as f64) / ((1 << 30) as f64);
     let secs = |dur: u128| dur as f64 / 1_000_000_000.0;
 
     println!("\nThroughputs:");
-    println!("  atomic: {:.3} GB/s", gigs / secs(durs[0]));
-    println!(" mutable: {:.3} GB/s", gigs / secs(durs[1]));
-    println!("    cell: {:.3} GB/s", gigs / secs(durs[2]));
-    println!("\nRatios");
-    println!(
-        " (atomic / mutable): {:.3}",
-        durs[0] as f64 / durs[1] as f64
-    );
-    println!(" (cell / mutable): {:.3}", durs[2] as f64 / durs[1] as f64);
+    println!("   A64Rng: {:.3} GB/s", gigs / secs(durs[0]));
+    println!("   C64Rng: {:.3} GB/s", gigs / secs(durs[1]));
+    println!("  C128Rng: {:.3} GB/s", gigs / secs(durs[2]));
 }

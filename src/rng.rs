@@ -4,17 +4,18 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-/// A thread-safe random number generator that uses atomics to update its state.
+/// A thread-safe random number generator with `AtomicU64`-backed state.
 ///
 /// This RNG can be shared safely across threads without requiring mutable references, at the
 /// cost of lower throughput due to atomic operations.
-pub type AtomicRng = Rng<AtomicCore>;
+pub type A64Rng = Rng<A64>;
 
-/// A random number generator designed for single-threaded contexts.
-///
-/// This is the non-atomic RNG type. It avoids the need for mutable references while delivering
-/// performance comparable to traditional mutable RNGs.
-pub type CellRng = Rng<CellCore>;
+/// A random number generator designed for single-threaded contexts with `Cell`-backed 64-bit state.
+pub type C64Rng = Rng<C64>;
+
+/// A random number generator designed for single-threaded contexts with `Cell`-backed 128-bit
+/// state.
+pub type C128Rng = Rng<C128>;
 
 /// A minimal core RNG interface for driving higher-level random generation.
 ///
@@ -33,27 +34,33 @@ pub trait Core: Sized {
     fn reseed(&self, seed: u64);
 }
 
-/// A core RNG with atomic state for concurrent use.
+/// A core RNG with `AtomicU64`-backed state for concurrent use.
 #[derive(Debug)]
-pub struct AtomicCore {
+pub struct A64 {
     pub(crate) state: AtomicU64,
 }
 
-/// A core RNG with `Cell`-backed state for single-threaded use.
+/// A core RNG with `Cell<u64>`-backed state for single-threaded use.
 #[derive(Debug, Clone)]
-pub struct CellCore {
+pub struct C64 {
     pub(crate) state: Cell<u64>,
 }
 
-impl Core for AtomicCore {
+/// A core RNG with `Cell<u128>`-backed state for single-threaded use.
+#[derive(Debug, Clone)]
+pub struct C128 {
+    pub(crate) state: Cell<u128>,
+}
+
+impl Core for A64 {
     fn new() -> Self {
         let state = AtomicU64::new(seed());
         Self { state }
     }
 
     fn u64(&self) -> u64 {
-        let old_state = self.state.fetch_add(INCREMENT, Ordering::Relaxed);
-        wyhash(old_state)
+        let old_state = self.state.fetch_add(INC_64, Ordering::Relaxed);
+        wyhash64(old_state)
     }
 
     fn reseed(&self, seed: u64) {
@@ -61,7 +68,7 @@ impl Core for AtomicCore {
     }
 }
 
-impl Core for CellCore {
+impl Core for C64 {
     fn new() -> Self {
         let state = Cell::new(seed());
         Self { state }
@@ -69,12 +76,30 @@ impl Core for CellCore {
 
     fn u64(&self) -> u64 {
         let old_state = self.state.get();
-        self.state.set(old_state.wrapping_add(INCREMENT));
-        wyhash(old_state)
+        self.state.set(old_state.wrapping_add(INC_64));
+        wyhash64(old_state)
     }
 
     fn reseed(&self, seed: u64) {
         self.state.set(seed);
+    }
+}
+
+impl Core for C128 {
+    fn new() -> Self {
+        let seed = (seed() as u128) << 64 | seed() as u128;
+        let state = Cell::new(seed);
+        Self { state }
+    }
+
+    fn u64(&self) -> u64 {
+        let old_state = self.state.get();
+        self.state.set(old_state.wrapping_add(INC_128));
+        wyhash128(old_state) as _
+    }
+
+    fn reseed(&self, seed: u64) {
+        self.state.set(seed as u128);
     }
 }
 
@@ -127,8 +152,8 @@ impl<C: Core> Rng<C> {
     ///
     /// # Example
     /// ```rust
-    /// # use randy::CellRng;
-    /// let rng = CellRng::new();
+    /// # use randy::C64Rng;
+    /// let rng = C64Rng::new();
     /// let value: u32 = rng.bounded(10..20);
     /// assert!(value >= 10 && value < 20);
     /// ```
@@ -159,8 +184,8 @@ impl<C: Core> Rng<C> {
     ///
     /// # Example
     /// ```rust
-    /// # use randy::CellRng;
-    /// let rng = CellRng::new();
+    /// # use randy::C64Rng;
+    /// let rng = C64Rng::new();
     /// let data = [1, 2, 3, 4, 5];
     /// let value = rng.choose(&data);
     /// println!("{value:?}");
@@ -182,8 +207,8 @@ impl<C: Core> Rng<C> {
     ///
     /// # Example
     /// ```rust
-    /// # use randy::CellRng;
-    /// let rng = CellRng::new();
+    /// # use randy::C64Rng;
+    /// let rng = C64Rng::new();
     /// let value = rng.choose_from_iter(1..=5);
     /// assert!(matches!(value, Some(1..=5)));
     /// ```
@@ -217,8 +242,8 @@ impl<C: Core> Rng<C> {
     ///
     /// # Example
     /// ```rust
-    /// # use randy::CellRng;
-    /// let rng = CellRng::new();
+    /// # use randy::C64Rng;
+    /// let rng = C64Rng::new();
     /// let data = ["a", "bb", "ccc"];
     /// let picked = rng.choose_softmax(&data, |s| s.len() as f64, 0.5);
     /// assert!(picked.is_some());
@@ -290,8 +315,8 @@ impl<C: Core> Rng<C> {
     ///
     /// # Example
     /// ```rust
-    /// # use randy::CellRng;
-    /// let rng = CellRng::new();
+    /// # use randy::C64Rng;
+    /// let rng = C64Rng::new();
     /// let data = [1, 2, 3];
     /// let picked = rng.choose_weighted(&data, |value| *value as f64);
     /// assert!(matches!(picked, Some(&1 | &2 | &3)));
@@ -342,8 +367,8 @@ impl<C: Core> Rng<C> {
     ///
     /// # Example
     /// ```rust
-    /// # use randy::CellRng;
-    /// let rng = CellRng::new();
+    /// # use randy::C64Rng;
+    /// let rng = C64Rng::new();
     /// let data = [1, 2, 3, 4, 5];
     /// let value = rng.choose_where(&data, |value| value % 2 == 0);
     /// assert!(matches!(value, Some(&2) | Some(&4)));
@@ -379,8 +404,8 @@ impl<C: Core> Rng<C> {
     ///
     /// # Example
     /// ```rust
-    /// # use randy::CellRng;
-    /// let rng = CellRng::new();
+    /// # use randy::C64Rng;
+    /// let rng = C64Rng::new();
     /// let values: [u8; 4] = rng.distinct_bounded(0..10);
     /// assert_eq!(values.len(), 4);
     /// assert!(values.iter().all(|&v| (0..10).contains(&v)));
@@ -411,8 +436,8 @@ impl<C: Core> Rng<C> {
     ///
     /// # Example
     /// ```rust
-    /// # use randy::CellRng;
-    /// let rng = CellRng::new();
+    /// # use randy::C64Rng;
+    /// let rng = C64Rng::new();
     /// let numbers: Vec<u32> = rng.iter().take(3).collect();
     /// println!("{numbers:?}");
     /// ```
@@ -431,8 +456,8 @@ impl<C: Core> Rng<C> {
     ///
     /// # Example
     /// ```rust
-    /// # use randy::CellRng;
-    /// let rng = CellRng::new();
+    /// # use randy::C64Rng;
+    /// let rng = C64Rng::new();
     /// let x: u32 = rng.random();
     /// println!("{x}");
     /// ```
@@ -445,8 +470,8 @@ impl<C: Core> Rng<C> {
     ///
     /// # Example
     /// ```rust
-    /// # use randy::CellRng;
-    /// let rng = CellRng::new();
+    /// # use randy::C64Rng;
+    /// let rng = C64Rng::new();
     /// let value: f32 = rng.random();
     /// println!("{value:?}");
     /// ```
@@ -463,8 +488,8 @@ impl<C: Core> Rng<C> {
     ///
     /// # Example
     /// ```rust
-    /// # use randy::CellRng;
-    /// let rng = CellRng::new();
+    /// # use randy::C64Rng;
+    /// let rng = C64Rng::new();
     ///
     /// rng.reseed(1234);
     /// let x: u32 = rng.random();
@@ -479,8 +504,8 @@ impl<C: Core> Rng<C> {
     ///
     /// # Example
     /// ```rust
-    /// # use randy::CellRng;
-    /// let rng = CellRng::new();
+    /// # use randy::C64Rng;
+    /// let rng = C64Rng::new();
     /// let mut data = [1, 2, 3, 4, 5];
     /// rng.shuffle(&mut data);
     /// println!("{data:?}");
@@ -509,8 +534,8 @@ impl<C: Core> Rng<C> {
     ///
     /// # Example
     /// ```rust
-    /// # use randy::CellRng;
-    /// let rng = CellRng::new();
+    /// # use randy::C64Rng;
+    /// let rng = C64Rng::new();
     /// let mut data = [1, 2, 3, 4];
     /// for value in rng.shuffle_iter(&mut data) {
     ///     *value *= 2;
@@ -532,7 +557,7 @@ impl<C: Core> Rng<C> {
     /// deterministic state based on the current state of the RNG.
     pub fn split(&self) -> Self {
         let mut tmp = self.u64();
-        tmp ^= wyhash(tmp.wrapping_add(INCREMENT));
+        tmp ^= wyhash64(tmp.wrapping_add(INC_64));
         let core = C::new();
         core.reseed(tmp);
         Self { core }
@@ -548,8 +573,8 @@ impl<C: Core> Rng<C> {
     ///
     /// # Example
     /// ```rust
-    /// # use randy::CellRng;
-    /// let rng = CellRng::new();
+    /// # use randy::C64Rng;
+    /// let rng = C64Rng::new();
     /// let mut selector = rng.uniform_selector();
     /// let values = [1, 2, 3];
     /// for x in &values {
@@ -574,8 +599,8 @@ impl<C: Core> Rng<C> {
     ///
     /// # Example
     /// ```rust
-    /// # use randy::CellRng;
-    /// let rng = CellRng::new();
+    /// # use randy::C64Rng;
+    /// let rng = C64Rng::new();
     /// let mut selector = rng.weighted_selector(|value: &i32| *value as f64);
     /// for value in [1, 2, 3] {
     ///     selector.observe(value);
@@ -769,11 +794,16 @@ impl<C, T, F> From<WeightedSelector<C, T, F>> for Option<T> {
 /// print(f"Coprime of n = {n} closest to n * {phi - 1} ≈  is {c}")
 /// print(f"The ratio is {c / n}")
 /// ```
-pub(crate) const INCREMENT: u64 = 0x9E3779B97F4A7FFF;
+pub(crate) const INC_64: u64 = 0x9E3779B97F4A7FFF;
 
 // These constants, like the `INCREMENT` constant, are coprime to 2^64.
-const ALPHA: u128 = 0x11F9ADBB8F8DA6FFF;
-const BETA: u128 = 0x1E3DF208C6781EFFF;
+const ALPHA_64: u128 = 0x11F9ADBB8F8DA6FFF;
+const BETA_64: u128 = 0x1E3DF208C6781EFFF;
+
+// 128-bit constants for the 128-bit state version of the RNG.
+pub(crate) const INC_128: u128 = 0x9E3779B97F4A7C15F39CC0605CEDC835;
+const ALPHA_128: u128 = 0x1F9ADC86AB04FFFA23B77253D075F74F;
+const BETA_128: u128 = 0xE3DF221099CC4003A4D4C4B52AAE2E09;
 
 fn seed() -> u64 {
     #[cfg(not(debug_assertions))]
@@ -801,16 +831,33 @@ fn seed() -> u64 {
 /// need to shuffle multiple slices. In such cases, consider initializing an `Rng` instance
 /// and calling its `shuffle` method directly.
 pub fn shuffle<T>(data: &mut [T]) {
-    let rng = CellRng::new();
+    let rng = C64Rng::new();
     rng.shuffle(data);
 }
 
 #[inline]
-pub(crate) fn wyhash(value: u64) -> u64 {
-    let mut tmp = (value as u128).wrapping_mul(ALPHA);
+pub(crate) fn wyhash64(value: u64) -> u64 {
+    let mut tmp = (value as u128).wrapping_mul(ALPHA_64);
     tmp ^= tmp >> 64;
-    tmp = tmp.wrapping_mul(BETA);
-    ((tmp >> 64) ^ tmp) as _
+    tmp = tmp.wrapping_mul(BETA_64);
+    ((tmp >> 64) ^ tmp) as u64
+}
+
+#[inline]
+pub(crate) fn wyhash128(value: u128) -> u128 {
+    let (p0, p1_base) = value.carrying_mul(ALPHA_128, 0);
+    let p1 = p1_base.wrapping_add(value);
+
+    // Fold, but keep the full 256-bit result as (t0, t1).
+    let t0 = p0 ^ p1;
+    let t1 = p1;
+
+    // Multiply (t1 * 2^128 + t0) by (2^128 + BETA_128), modulo 2^256.
+    let (q0, q1_base) = t0.carrying_mul(BETA_128, 0);
+    let (cross, _) = t1.carrying_mul(BETA_128, 0);
+    let q1 = q1_base.wrapping_add(cross).wrapping_add(t0);
+
+    q0 ^ q1
 }
 
 /// A generator of values of type `T`.
