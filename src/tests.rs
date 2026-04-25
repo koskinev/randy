@@ -1040,7 +1040,7 @@ fn atomic_rng_choose_softmax() {
 }
 
 #[ignore]
-#[allow(dead_code)]
+#[test]
 fn bench() {
     // Benchmark the performance of atomic vs. normal RNG state updates.
     // Run with `cargo test bench --release -- --ignored --nocapture`
