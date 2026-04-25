@@ -21,10 +21,7 @@ pub type C128Rng = Rng<C128>;
 ///
 /// This trait defines the core `u64` stream and seeding interface used by [`Rng`].
 pub trait Core: Sized {
-    /// Initializes a new core RNG instance.
-    ///
-    /// In release builds, the core is seeded from `std::hash::RandomState`. In debug builds, the
-    /// seed is fixed for reproducibility. Use [`Rng::reseed`] to set an explicit seed.
+    /// Initializes a new RNG instance.
     fn new() -> Self;
 
     /// Returns the next `u64` value from the pseudorandom sequence.
@@ -32,6 +29,13 @@ pub trait Core: Sized {
 
     /// Reseeds the core RNG with the given seed.
     fn reseed(&self, seed: u64);
+
+    /// Initializes a new RNG instance with the given seed.
+    fn with_seed(seed: u64) -> Self {
+        let core = Self::new();
+        core.reseed(seed);
+        core
+    }
 }
 
 /// A core RNG with `AtomicU64`-backed state for concurrent use.
@@ -66,6 +70,12 @@ impl Core for A64 {
     fn reseed(&self, seed: u64) {
         self.state.store(seed, Ordering::Relaxed);
     }
+
+    fn with_seed(seed: u64) -> Self {
+        Self {
+            state: AtomicU64::new(seed),
+        }
+    }
 }
 
 impl Core for C64 {
@@ -82,6 +92,12 @@ impl Core for C64 {
 
     fn reseed(&self, seed: u64) {
         self.state.set(seed);
+    }
+
+    fn with_seed(seed: u64) -> Self {
+        Self {
+            state: Cell::new(seed),
+        }
     }
 }
 
@@ -100,6 +116,12 @@ impl Core for C128 {
 
     fn reseed(&self, seed: u64) {
         self.state.set(seed as u128);
+    }
+
+    fn with_seed(seed: u64) -> Self {
+        Self {
+            state: Cell::new(seed as u128),
+        }
     }
 }
 
@@ -556,10 +578,9 @@ impl<C: Core> Rng<C> {
     /// Splits a new RNG instance from the current one. The new instance will have a different,
     /// deterministic state based on the current state of the RNG.
     pub fn split(&self) -> Self {
-        let mut tmp = self.u64();
-        tmp ^= wyhash64(tmp.wrapping_add(INC_64));
-        let core = C::new();
-        core.reseed(tmp);
+        let mut seed = self.u64();
+        seed ^= wyhash64(seed.wrapping_add(INC_64));
+        let core = C::with_seed(seed);
         Self { core }
     }
 
